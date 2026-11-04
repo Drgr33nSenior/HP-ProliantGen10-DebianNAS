@@ -1,114 +1,54 @@
-# Adjust the installed SSD LVM allocation
+# Installed SSD layout
 
-This owner-run procedure applies only to the recorded fresh Debian installation
-on the SanDisk SSD PLUS 240 GB. It preserves the OS and filesystem UUIDs.
-No command addresses the separate `virt` volume group or the installation USB.
-Do not run the NAS package bootstrap until `/var` has adequate capacity.
+The owner reported this layout after changing the SSD allocation and rearranging
+the disks. It replaces the earlier ext4 layout with a small `/var` and large
+`/home`. No SSD resize is required for the initial service setup. The earlier
+ext4 shrink procedure has been retired; do not apply it to the current XFS
+filesystems.
 
-## Check the exact target and recovery copy
+## OS and service storage
 
-The recorded `microserver-vg` has one PV on the OS SSD and almost no free
-extents. Its ext4 `/home` uses about 2 MiB of a 184.30 GiB LV. Confirm those
-facts still hold with `lsblk`, `pvs`, `lvs` and `df` before proceeding. Stop if
-the VG spans another disk, names/types differ or additional data has appeared.
+The SanDisk SSD PLUS 240 GB reports 223.6 GiB. Its `microserver-vg` volume
+group uses one SSD PV and has no unallocated extents. Device letters changed
+after the rearrangement; identify disks by model, serial and persistent ID
+before any future storage operation.
 
-The target allocation is:
+| Mount or use | Reported LV size | Filesystem or type |
+| --- | --- | --- |
+| `/boot/efi` | 976 MiB partition | FAT |
+| `/boot` | 977 MiB partition | ext4 |
+| `/` | 37.25 GiB | XFS |
+| `/var` | 130.38 GiB | XFS |
+| `/var/log` | 40.98 GiB | XFS |
+| `/tmp` | 9.31 GiB | XFS |
+| Swap | 3.75 GiB | Linux swap |
 
-| Volume | Target |
-| --- | --- |
-| `/` | 40 GiB ext4 |
-| `/var` | 144 GiB ext4 |
-| `/home` | 16 GiB ext4 |
-| `/tmp` | Existing 2.62 GiB, unchanged |
-| Swap | Existing 11.25 GiB, unchanged |
-| VG free space | Approximately 7.8 GiB |
+`/home` is a directory on the root filesystem, not a separate LV. Home data
+therefore shares root capacity. `/var/log` has its own LV. Docker images,
+container logs under `/var/lib/docker` and the active monitoring databases use
+`/var`; the separate log filesystem does not bound Docker's storage use.
 
-Keep the existing EFI and `/boot` partitions. Run each block separately from
-an owner root terminal. Stop on any error; do not paste subsequent stages after
-a failed command. No force, automatic confirmation or lazy-unmount flags are
-part of this procedure.
+The owner reported about 128 GiB available in `/var`, which accommodates the
+initial 24 GB Prometheus retention budget plus container images and other
+service data. Retention is not a filesystem quota. Monitor free space on `/`,
+`/var` and `/var/log` as services are activated. Do not reduce an LV to create
+free extents without a separate reviewed filesystem and recovery procedure.
 
-Save work, end other `/home` sessions and stop jobs that write there before
-taking the recovery copy. Prepare a private directory on the root filesystem,
-then back up the
-SSD VG metadata and `/home`. Keep the same terminal for the variable below:
+## Read-only qualification
 
-```sh
-cd /root || exit 1
-umask 077
-resize_backup=$(mktemp -d /root/microserver-ssd-resize.XXXXXXXX) &&
-  vgcfgbackup -f "$resize_backup/microserver-vg.vg" microserver-vg &&
-  tar --acls --xattrs --numeric-owner --one-file-system -cpf "$resize_backup/home.tar" -C / home &&
-  tar --acls --xattrs --numeric-owner --compare -f "$resize_backup/home.tar" -C /
-```
-
-Require a successful archive comparison. Retain a private copy off the SSD
-before shrinking; the root-filesystem copy covers damage to `/home`, not loss
-of the SSD. Do not send the archive to an agent or put it in Git or shared
-storage. LVM metadata alone is not a backup of file contents.
-
-## Shrink home before reducing its LV
-
-End other sessions and jobs using `/home`, then run:
+Run these checks on the NAS when confirming the current layout:
 
 ```sh
-cd /root || exit 1
-umount /home
+lsblk -e7 -o NAME,SIZE,MODEL,TYPE,FSTYPE,MOUNTPOINTS
+df -hT / /var /var/log /home /tmp
+pvs --units g -o pv_name,vg_name,pv_size,pv_free
+vgs --units g -o vg_name,vg_size,vg_free
+lvs -a --units g -o vg_name,lv_name,lv_size,lv_attr,devices
 ```
 
-If the mount is busy, stop. Move other shells out of `/home` and end their
-sessions normally before trying this step again. Do not force the unmount or
-run a filesystem shrink while it is mounted.
-
-Check the unmounted filesystem:
-
-```sh
-e2fsck -f /dev/microserver-vg/home
-```
-
-Require exit status 0. If it reports corrected errors (status 1), repeat only
-this check and require a clean result. For any other status, stop and inspect
-the failure before continuing.
-
-First shrink ext4 to 15 GiB, leaving a margin inside the proposed 16 GiB LV:
-
-```sh
-resize2fs /dev/microserver-vg/home 15G
-```
-
-Only after that command succeeds, reduce the LV. Review its displayed target
-and confirm only `microserver-vg/home` at 16 GiB:
-
-```sh
-lvreduce --size 16G /dev/microserver-vg/home
-```
-
-Grow ext4 to the new LV boundary and remount using the existing fstab entry:
-
-```sh
-resize2fs /dev/microserver-vg/home && mount /home
-```
-
-## Grow root and service storage
-
-After `/home` is successfully remounted, extend each LV and its ext4 filesystem:
-
-```sh
-lvextend --resizefs --size 40G /dev/microserver-vg/root
-```
-
-```sh
-lvextend --resizefs --size 144G /dev/microserver-vg/var
-```
-
-Verify `df -hT / /var /home /tmp`, `lvs microserver-vg` and `vgs microserver-vg`.
-Check normal account access and retain the recovery copy through reboot
-verification. A failed stage can leave `/home` unmounted or the filesystem
-smaller than its LV. Stop and inspect that stage; do not restart the whole
-procedure, format a volume or delete an LV as recovery.
-
-These operations have not been run by the controller. The owner must qualify
-the actual result before installing or activating services. References:
-[resize2fs](https://manpages.debian.org/trixie/e2fsprogs/resize2fs.8.en.html),
-[lvreduce](https://manpages.debian.org/trixie/lvm2/lvreduce.8.en.html),
-[lvextend](https://manpages.debian.org/trixie/lvm2/lvextend.8.en.html).
+The latest owner output lists only the SSD VG and its five LVs. Each of the
+four ST2000VN004 HDDs has an unassigned LVM PV on a partition; no HDD VG or
+LV is listed. Those signatures do not prove that old data has been erased.
+Verify the persistent identities, required data disposition and drive health
+before any owner-run signature removal or ZFS pool creation. Keep disk IDs,
+serials and addresses in a private install journal outside Git.

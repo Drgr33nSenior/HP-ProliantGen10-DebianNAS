@@ -89,6 +89,11 @@ NAS, then verify them again after reboot. `performance` requests the highest
 available P-state; it does not promise a fixed turbo clock or sufficient
 throughput for every workload. Measure temperatures, throughput and wall power.
 
+The owner confirmed `microserver-performance` active, `tuned-adm verify` exit 0,
+and TuneD enabled/active after the manual apply. Both `acpi-cpufreq` policies
+reported `performance`; CPU boost was enabled. Persistence after reboot and
+performance under load remain to be verified.
+
 For an owner rollback, `tuned-adm off` unloads the tuning. Disable/stop the TuneD
 service if it should remain off, then verify the effective governor. The next
 `tuning` or full configure apply selects performance again. Keep the existing

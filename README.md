@@ -15,7 +15,7 @@ physical installation, recovery, NFS access or monitoring performance.
 | Platform | Original MicroServer Gen10; owner-confirmed dual-core Opteron X3216 (1.6–3.0 GHz) |
 | RAM | 24 GB; retain headroom for the OS and ZFS cache |
 | OS storage | SanDisk SSD PLUS 240 GB (223.6 GiB reported): Debian, container images and active monitoring databases |
-| Bulk storage | Four 2 TB Seagate IronWolf ST2000VN004 HDDs; existing `virt` LVM data awaits owner review |
+| Bulk storage | Four 2 TB Seagate IronWolf ST2000VN004 HDDs; unassigned LVM PVs await identity checks and owner approval for reuse |
 | Network | Binardat RJ45 card, owner-reported Aquantia AQC107; in the electrically x8 slot; dedicated GPU removed |
 | Pool | Planned owner-created four-disk RAIDZ2, about 4 TB / 3.64 TiB before filesystem overhead and free-space reserve |
 
@@ -54,19 +54,22 @@ Cluster-specific workstation absence/GPU rules are not reused as NAS health rule
 Prepare the reviewed image with the [USB builder](docs/INSTALL-MEDIA.md), or use
 verified official [Debian 13 AMD64 installation media](https://www.debian.org/releases/trixie/).
 Identify the SanDisk 240 GB SSD by model, serial and capacity. Disconnect the four HDDs
-during OS installation where practical. Install a minimal system with ext4 on
-the SSD, SSH and a named administrator; a desktop and ZFS root are unnecessary.
+during OS installation where practical. Install a minimal system on the SSD
+with XFS or ext4, SSH and a named administrator; a desktop and ZFS root are unnecessary.
 Do not select the HDDs for OS partitioning or LVM.
 Use the custom MicroServer boot entry, which includes the owner-required
 `iommu=pt` SATA workaround for installation and the installed GRUB configuration.
 Verify it in `/proc/cmdline` after the first SSD boot and check disk visibility.
 
-The first installed system used guided LVM with a 6.18 GiB `/var` and a
-184.30 GiB `/home`. Expand `/var` before container bootstrap; Docker and the
-configured monitoring retention do not fit that layout. The bounded
-[SSD LVM adjustment](docs/SSD-LVM.md) preserves the existing OS and the separate
-`virt` data volume group. Existing VM volumes require owner review before ZFS
-pool creation; an LVM signature is not evidence of a blank disk.
+The current installation uses XFS on SSD LVM: 37.25 GiB for `/`, 130.38 GiB
+for `/var`, 40.98 GiB for `/var/log`, 9.31 GiB for `/tmp` and 3.75 GiB swap.
+`/home` shares the root filesystem, and the SSD VG has no unallocated space.
+The owner reported about 128 GiB available in `/var`, sufficient for the initial
+monitoring budget. See the [installed SSD layout](docs/SSD-LVM.md).
+This replaces the first installation's small `/var`; the previous ext4 resize
+procedure does not apply. The latest LVM output lists no HDD volume group or
+LVs, but each HDD still has a partition with an LVM signature. Verify identities
+and obtain owner approval before reuse; unassigned PVs do not prove erased data.
 
 Use Debian's kernel and signed package repositories. Enable Debian `contrib`
 for ZFS, with matching kernel headers; follow the
