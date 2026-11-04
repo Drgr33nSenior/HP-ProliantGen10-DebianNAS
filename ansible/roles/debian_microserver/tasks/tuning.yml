@@ -1,0 +1,147 @@
+---
+- name: Install the selected CPU policy manager from Debian repositories
+  ansible.builtin.apt:
+    name: [tuned, linux-cpupower]
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Collect service metadata for competing power managers
+  ansible.builtin.service_facts:
+
+- name: Inspect TuneD paths without reading configuration values
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - {path: /etc/tuned, kind: directory}
+    - {path: /etc/tuned/profiles, kind: directory}
+    - {path: /etc/tuned/profiles/microserver-performance, kind: directory}
+    - {path: /etc/tuned/tuned-main.conf, kind: file}
+    - {path: /etc/tuned/active_profile, kind: file}
+    - {path: /etc/tuned/profile_mode, kind: file}
+    - {path: /etc/tuned/profiles/microserver-performance/tuned.conf, kind: file}
+  register: microserver_tuned_paths
+
+- name: Require protected TuneD directories and regular configuration files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$') and ((item.item.kind == 'directory' and item.stat.isdir | default(false)) or (item.item.kind == 'file' and item.stat.isreg | default(false))))
+    fail_msg: Refuse symlinked, untrusted or writable TuneD paths before configuring performance.
+  loop: '{{ microserver_tuned_paths.results }}'
+
+- name: Create the local TuneD profile directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [/etc/tuned/profiles, /etc/tuned/profiles/microserver-performance]
+
+- name: Install the CPU-only performance profile
+  ansible.builtin.copy:
+    src: tuned-performance.conf
+    dest: /etc/tuned/profiles/microserver-performance/tuned.conf
+    owner: root
+    group: root
+    mode: '0644'
+  register: microserver_tuned_profile
+
+- name: Keep TuneD running with static tuning only
+  ansible.builtin.lineinfile:
+    path: /etc/tuned/tuned-main.conf
+    regexp: '^\s*{{ item.key }}\s*='
+    line: '{{ item.key }} = {{ item.value }}'
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - {key: daemon, value: '1'}
+    - {key: dynamic_tuning, value: '0'}
+  register: microserver_tuned_main
+
+- name: Select the persistent profile before starting TuneD
+  ansible.builtin.copy:
+    dest: '/etc/tuned/{{ item.file }}'
+    content: '{{ item.value }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - {file: active_profile, value: "microserver-performance\n"}
+    - {file: profile_mode, value: "manual\n"}
+  register: microserver_tuned_selection
+
+- name: Give TuneD sole ownership of CPU power policy
+  ansible.builtin.systemd_service:
+    name: '{{ item }}'
+    enabled: false
+    state: stopped
+  loop: [cpupower.service, auto-cpufreq.service, tlp.service, power-profiles-daemon.service, tuned-ppd.service, powertop.service]
+  when: ansible_facts.services.get(item, {}).get('status', 'not-found') != 'not-found'
+
+- name: Enable the selected TuneD policy
+  ansible.builtin.systemd_service:
+    name: tuned
+    enabled: true
+    state: "{{ 'restarted' if microserver_tuned_profile.changed or microserver_tuned_main.changed or microserver_tuned_selection.changed else 'started' }}"
+  when: not ansible_check_mode
+
+- name: Read the active TuneD profile
+  ansible.builtin.command:
+    argv: [/usr/sbin/tuned-adm, active]
+  environment: {LC_ALL: C}
+  register: microserver_tuned_active
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require the selected profile without an additional post-loaded profile
+  ansible.builtin.assert:
+    that:
+      - "microserver_tuned_active.stdout | trim == 'Current active profile: microserver-performance'"
+    fail_msg: Review unexpected TuneD profile selection before claiming performance mode is active.
+  when: not ansible_check_mode
+
+- name: Find the available CPU frequency policies
+  ansible.builtin.find:
+    paths: /sys/devices/system/cpu/cpufreq
+    patterns: policy*
+    file_type: directory
+    recurse: false
+    follow: false
+  register: microserver_cpufreq_policies
+  when: not ansible_check_mode
+
+- name: Require a CPU frequency driver before qualifying performance mode
+  ansible.builtin.assert:
+    that: [microserver_cpufreq_policies.matched | int > 0]
+    fail_msg: No CPU frequency policy is available; inspect the firmware and driver before continuing.
+  when: not ansible_check_mode
+
+- name: Read the effective governor for every policy
+  ansible.builtin.command:
+    argv: [cat, '{{ item.path }}/scaling_governor']
+  loop: '{{ microserver_cpufreq_policies.files }}'
+  register: microserver_cpufreq_governors
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require performance on every available CPU policy
+  ansible.builtin.assert:
+    that: [item.stdout | trim == 'performance']
+    fail_msg: TuneD did not set the requested governor; inspect the driver and competing managers.
+  loop: '{{ microserver_cpufreq_governors.results }}'
+  when: not ansible_check_mode
+
+- name: Verify the applied TuneD settings
+  ansible.builtin.command:
+    argv: [/usr/sbin/tuned-adm, verify]
+  environment: {LC_ALL: C}
+  changed_when: false
+  when: not ansible_check_mode

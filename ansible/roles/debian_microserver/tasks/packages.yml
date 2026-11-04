@@ -24,6 +24,7 @@
       - irqbalance
       - linux-cpupower
       - powertop
+      - tuned
       - amd64-microcode
       - firmware-misc-nonfree
       - firmware-amd-graphics

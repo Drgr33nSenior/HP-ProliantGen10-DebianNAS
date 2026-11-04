@@ -105,7 +105,8 @@ are suppressed during the apt transaction; complete configuration before reboot.
 Matching headers for the running Debian kernel must be available. If they are
 unavailable, update and boot the supported Debian kernel before retrying bootstrap.
 No user is added to the Docker group. The default configure run does not repeat
-package installation or update all host packages.
+the full package bootstrap or upgrade installed packages. Its TuneD stage ensures
+the CPU policy tools are present.
 Recommended packages are disabled. AMD microcode, onboard Broadcom firmware,
 AppArmor and the ZFS event daemon are explicit dependencies. The custom install
 profile selects no desktop task or standard task bundle; only its small explicit
@@ -120,8 +121,16 @@ Bootstrap keeps the iperf3 server and PowerTOP auto-tuning unit disabled and
 stopped. The configure stage enables time sync and, by default, `irqbalance`;
 set `microserver_irqbalance_enabled: false` if measurements favor manual/default
 IRQ placement. The profile installs `nftables` for reviewed firewall setup but
-does not enable it or change existing rules. It does not set a CPU governor,
-disk sleep timer or PCIe power policy.
+does not enable it or change existing rules. TuneD selects the `performance`
+CPU governor through the local `microserver-performance` profile. Disk sleep,
+PCIe power policy and `iommu=pt` remain separately managed.
+
+The owner can apply only CPU tuning with `--tags tuning` using the same reviewed
+inventory and target boundary. That stage installs only TuneD/CPU diagnostics and
+configures the profile; it does not require or change the data pool. It is also
+part of normal configure. Actual TuneD selection, CPU frequency-policy availability
+and the effective governor on every policy must pass verification. See the
+[performance-mode procedure](docs/HOST-TOOLS.md#performance-mode).
 
 ## 3. Create and record the data pool locally
 

@@ -1,5 +1,6 @@
 """Exercise the actual installer guards and templates without contacting a host."""
 import copy
+import configparser
 import json
 import re
 import sys
@@ -79,7 +80,7 @@ class MicroServerTests(unittest.TestCase):
         apt = next(task['ansible.builtin.apt'] for task in package_tasks if 'ansible.builtin.apt' in task)
         self.assertFalse(apt['install_recommends'])
         self.assertEqual(apt['policy_rc_d'], 101)
-        self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree', 'firmware-amd-graphics', 'ethtool', 'pciutils', 'lm-sensors', 'iperf3', 'nftables', 'systemd-timesyncd', 'irqbalance', 'linux-cpupower', 'powertop'} <= set(apt['name']))
+        self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree', 'firmware-amd-graphics', 'ethtool', 'pciutils', 'lm-sensors', 'iperf3', 'nftables', 'systemd-timesyncd', 'irqbalance', 'linux-cpupower', 'powertop', 'tuned'} <= set(apt['name']))
 
     def test_iommu_workaround_is_in_installer_and_persistent_boot_options(self):
         for name, command in [('grub-entry.cfg', 'linux '), ('isolinux-entry.cfg', 'append ')]:
@@ -89,7 +90,7 @@ class MicroServerTests(unittest.TestCase):
             self.assertIn('iommu=pt', args[args.index('---') + 1:])
             self.assertFalse(any(arg.startswith('iommu=') and arg != 'iommu=pt' for arg in args))
 
-    def test_host_tools_do_not_enable_benchmark_or_power_autotuning(self):
+    def test_host_tools_keep_benchmark_and_powertop_inactive(self):
         tasks = read_yaml(ROLE / 'tasks/packages.yml')
         selection = next(task['ansible.builtin.debconf'] for task in tasks if 'ansible.builtin.debconf' in task)
         self.assertEqual(selection, dict(name='iperf3', question='iperf3/start_daemon', value='false', vtype='boolean'))
@@ -110,6 +111,55 @@ class MicroServerTests(unittest.TestCase):
         for collector in ['hwmon', 'netdev', 'netclass']:
             self.assertIn(f'--collector.{collector}', args)
         self.assertIn('--web.listen-address=127.0.0.1:9100', args)
+
+    def test_tuned_profile_scope_and_runtime_qualification(self):
+        profile = configparser.ConfigParser(interpolation=None)
+        profile.read(ROLE / 'files/tuned-performance.conf')
+        self.assertEqual(set(profile.sections()), {'main', 'cpu'})
+        self.assertEqual(dict(profile['cpu']), {'governor': 'performance'})
+        self.assertNotIn('include', profile['main'])
+        tasks = read_yaml(ROLE / 'tasks/tuning.yml')
+        apt = tasks[0]['ansible.builtin.apt']
+        self.assertEqual(set(apt['name']), {'tuned', 'linux-cpupower'})
+        self.assertFalse(apt['install_recommends'])
+        self.assertEqual(apt['policy_rc_d'], 101)
+        tuning_import = next(task for task in read_yaml(ROLE / 'tasks/main.yml')
+                             if task['ansible.builtin.import_tasks'] == 'tuning.yml')
+        self.assertEqual(set(tuning_import['tags']), {'configure', 'tuning'})
+        competing = next(task for task in tasks if task['name'].startswith('Give TuneD sole'))
+        self.assertNotIn('irqbalance.service', competing['loop'])
+        for name in ['cpupower.service', 'tlp.service', 'power-profiles-daemon.service', 'powertop.service']:
+            self.assertIn(name, competing['loop'])
+        self.assertFalse(competing['ansible.builtin.systemd_service']['enabled'])
+        self.assertEqual(competing['ansible.builtin.systemd_service']['state'], 'stopped')
+        self.assertFalse(ENV.compile_expression(competing['when'])(
+            item='tlp.service', ansible_facts={'services': {}}))
+        self.assertFalse(ENV.compile_expression(competing['when'])(
+            item='tlp.service', ansible_facts={'services': {'tlp.service': {'status': 'not-found'}}}))
+        self.assertTrue(ENV.compile_expression(competing['when'])(
+            item='tlp.service', ansible_facts={'services': {'tlp.service': {'status': 'enabled'}}}))
+        protected = next(task for task in tasks if task['name'].startswith('Require protected TuneD'))
+        item = dict(item={'kind': 'directory'}, stat=dict(exists=True, isdir=True,
+                                                       islnk=False, uid=0, mode='0755'))
+        self.assertTrue(assertions(protected, {'item': item}))
+        for change in [dict(islnk=True), dict(uid=1000), dict(mode='0777')]:
+            bad = copy.deepcopy(item)
+            bad['stat'].update(change)
+            self.assertFalse(assertions(protected, {'item': bad}))
+        no_driver = next(task for task in tasks if task['name'].startswith('Require a CPU frequency'))
+        self.assertFalse(assertions(no_driver, {'microserver_cpufreq_policies': {'matched': 0}}))
+        self.assertTrue(assertions(no_driver, {'microserver_cpufreq_policies': {'matched': 2}}))
+        governor = next(task for task in tasks if task['name'].startswith('Require performance on every'))
+        self.assertTrue(assertions(governor, {'item': {'stdout': 'performance\n'}}))
+        self.assertFalse(assertions(governor, {'item': {'stdout': 'schedutil\n'}}))
+        profile_check = next(task for task in tasks if task['name'].startswith('Require the selected profile'))
+        active = {'stdout': 'Current active profile: microserver-performance\n'}
+        self.assertTrue(assertions(profile_check, {'microserver_tuned_active': active}))
+        self.assertFalse(assertions(profile_check, {'microserver_tuned_active': {'stdout': 'Current active profile: balanced'}}))
+        verify = tasks[-1]
+        self.assertEqual(verify['ansible.builtin.command']['argv'], ['/usr/sbin/tuned-adm', 'verify'])
+        self.assertNotIn('failed_when', verify)
+        self.assertEqual(verify['when'], 'not ansible_check_mode')
 
     def test_target_boundary(self):
         task = read_yaml(ROOT / 'ansible/microserver.yml')[0]['pre_tasks'][0]

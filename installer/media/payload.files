@@ -17,6 +17,7 @@ ansible/roles/debian_microserver/tasks/main.yml
 ansible/roles/debian_microserver/tasks/packages.yml
 ansible/roles/debian_microserver/tasks/storage.yml
 ansible/roles/debian_microserver/tasks/host.yml
+ansible/roles/debian_microserver/tasks/tuning.yml
 ansible/roles/debian_microserver/tasks/monitoring.yml
 ansible/roles/debian_microserver/handlers/main.yml
 ansible/roles/debian_microserver/templates/exports.j2
@@ -26,6 +27,7 @@ ansible/roles/debian_microserver/files/alerts.yaml
 ansible/roles/debian_microserver/files/alertmanager.yaml
 ansible/roles/debian_microserver/files/microserver-monitoring.service
 ansible/roles/debian_microserver/files/microserver-dashboard.json
+ansible/roles/debian_microserver/files/tuned-performance.conf
 observability/versions.json
 observability/config/datasources.metrics.yaml
 observability/config/dashboards.yaml
