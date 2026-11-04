@@ -1,4 +1,11 @@
 ---
+- name: Keep iperf3 as an on-demand diagnostic tool
+  ansible.builtin.debconf:
+    name: iperf3
+    question: iperf3/start_daemon
+    value: 'false'
+    vtype: boolean
+
 - name: Install Debian storage and monitoring packages from configured signed repositories
   ansible.builtin.apt:
     name:
@@ -10,8 +17,16 @@
       - smartmontools
       - ethtool
       - pciutils
+      - lm-sensors
+      - iperf3
+      - nftables
+      - systemd-timesyncd
+      - irqbalance
+      - linux-cpupower
+      - powertop
       - amd64-microcode
       - firmware-misc-nonfree
+      - firmware-amd-graphics
       - apparmor
       - zfs-zed
       - docker.io
@@ -23,3 +38,10 @@
     cache_valid_time: 3600
     policy_rc_d: 101
   # Debian contrib must already be enabled. No third-party repository or kernel.
+
+- name: Keep benchmark and automatic power-tuning units inactive
+  ansible.builtin.systemd_service:
+    name: '{{ item }}'
+    enabled: false
+    state: stopped
+  loop: [iperf3, powertop]

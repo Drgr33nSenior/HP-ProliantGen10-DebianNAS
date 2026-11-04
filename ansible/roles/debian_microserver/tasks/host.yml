@@ -1,0 +1,12 @@
+---
+- name: Enable persistent clock synchronization
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    enabled: true
+    state: started
+
+- name: Apply the selected interrupt-balancing policy
+  ansible.builtin.systemd_service:
+    name: irqbalance
+    enabled: '{{ microserver_irqbalance_enabled | bool }}'
+    state: "{{ 'started' if microserver_irqbalance_enabled | bool else 'stopped' }}"

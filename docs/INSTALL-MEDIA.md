@@ -89,7 +89,8 @@ installation media. USB readback does not establish a successful physical boot.
    with discovered hardware, verified SSH identity and private configuration.
 
 The base has no desktop or selected task bundles. It explicitly includes SSH,
-sudo, Python for remote Ansible, CA certificates, AppArmor, AMD microcode and
+sudo, Python for remote Ansible, CA certificates, AppArmor, persistent time sync,
+AMD microcode, `firmware-amd-graphics` for the onboard console and
 `firmware-misc-nonfree` for the onboard Broadcom/tg3 firmware. Official installer
 firmware lookup remains enabled, with Debian `contrib` and `non-free-firmware`
 repositories. The Marvell SATA path uses the kernel driver.
@@ -106,6 +107,8 @@ machine, AI workload, embedding model or graph database is installed.
 The [backup design](BACKUPS.md) keeps Restic compression, encryption and usable
 decryption secrets on Threadripper. The NAS stores the encrypted repository.
 This does not encrypt ordinary NFS files or activate a workstation backup job.
+The Ansible package stage adds the [host diagnostic and power tools](HOST-TOOLS.md);
+the minimal base install does not run benchmarks or automatic power tuning.
 
 ## Verify the AQC107 network card
 

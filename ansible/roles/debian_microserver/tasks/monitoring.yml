@@ -123,7 +123,7 @@
   ansible.builtin.copy:
     dest: /etc/default/prometheus-node-exporter
     content: |
-      ARGS="--web.listen-address=127.0.0.1:9100 --collector.disable-defaults --collector.cpu --collector.meminfo --collector.filesystem --collector.diskstats --collector.pressure --collector.stat --collector.time --collector.uname --collector.zfs"
+      ARGS="--web.listen-address=127.0.0.1:9100 --collector.disable-defaults --collector.cpu --collector.meminfo --collector.filesystem --collector.diskstats --collector.pressure --collector.stat --collector.time --collector.uname --collector.zfs --collector.hwmon --collector.netdev --collector.netclass"
     owner: root
     group: root
     mode: '0644'

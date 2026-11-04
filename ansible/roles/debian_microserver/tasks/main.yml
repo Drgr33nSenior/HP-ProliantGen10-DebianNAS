@@ -7,6 +7,10 @@
   ansible.builtin.import_tasks: storage.yml
   tags: [configure]
 
+- name: Configure lightweight host services
+  ansible.builtin.import_tasks: host.yml
+  tags: [configure]
+
 - name: Stage and optionally start local monitoring
   ansible.builtin.import_tasks: monitoring.yml
   tags: [configure]

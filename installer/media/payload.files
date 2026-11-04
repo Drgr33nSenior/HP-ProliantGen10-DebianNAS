@@ -2,6 +2,7 @@
 README.md
 docs/INSTALL-MEDIA.md
 docs/BACKUPS.md
+docs/HOST-TOOLS.md
 LICENSE
 NOTICE
 third-party-licenses/ArchLinuxThreadripper-MIT.txt
@@ -14,6 +15,7 @@ ansible/roles/debian_microserver/vars/main.yml
 ansible/roles/debian_microserver/tasks/main.yml
 ansible/roles/debian_microserver/tasks/packages.yml
 ansible/roles/debian_microserver/tasks/storage.yml
+ansible/roles/debian_microserver/tasks/host.yml
 ansible/roles/debian_microserver/tasks/monitoring.yml
 ansible/roles/debian_microserver/handlers/main.yml
 ansible/roles/debian_microserver/templates/exports.j2

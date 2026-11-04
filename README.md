@@ -100,9 +100,18 @@ Recommended packages are disabled. AMD microcode, onboard Broadcom firmware,
 AppArmor and the ZFS event daemon are explicit dependencies. The custom install
 profile selects no desktop task or standard task bundle; only its small explicit
 base package list and installer-detected firmware are added.
-Small diagnostic utilities `ethtool` and `pciutils` support NIC/PCI checks without
-adding a background service. No separate AQC107 driver or firmware download is
-required for a card with working onboard firmware.
+Hardware tools include `ethtool`, `pciutils`, `lm-sensors`, `iperf3`,
+`linux-cpupower` and PowerTOP. The base image explicitly includes AMD graphics
+firmware for the onboard console and `systemd-timesyncd` for persistent time
+sync. No separate AQC107 driver or firmware download is required for a card with
+working onboard firmware. See [host tools and power qualification](docs/HOST-TOOLS.md).
+
+Bootstrap keeps the iperf3 server and PowerTOP auto-tuning unit disabled and
+stopped. The configure stage enables time sync and, by default, `irqbalance`;
+set `microserver_irqbalance_enabled: false` if measurements favor manual/default
+IRQ placement. The profile installs `nftables` for reviewed firewall setup but
+does not enable it or change existing rules. It does not set a CPU governor,
+disk sleep timer or PCIe power policy.
 
 ## 3. Create and record the data pool locally
 
@@ -180,6 +189,9 @@ endpoints. Runtime containers use non-root UIDs, dropped capabilities, read-only
 roots, bounded memory/CPU/PIDs, bounded Docker logs and immutable images.
 The three container memory limits total 2304 MiB, excluding Docker, the native
 exporter, OS and ZFS cache; actual usage remains to be measured.
+The exporter includes available hardware temperature/fan readings and network
+interface counters through its hwmon, netdev and netclass collectors. Sensor
+availability still depends on the actual hardware and kernel driver.
 
 Linux host networking lets containers reach the loopback-only native exporter.
 Grafana 3000, Prometheus 9090, Alertmanager 9093 and node exporter 9100 bind only

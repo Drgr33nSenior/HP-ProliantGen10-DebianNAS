@@ -6,3 +6,5 @@ microserver_nfs_clients: []
 microserver_share_uid: 0
 microserver_share_gid: 0
 microserver_monitoring_enabled: false
+# Set false if measured IRQ placement/throughput regresses with balancing.
+microserver_irqbalance_enabled: true

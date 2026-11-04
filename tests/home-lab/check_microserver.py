@@ -69,15 +69,39 @@ class MicroServerTests(unittest.TestCase):
         self.assertEqual(entries['hw-detect/load_firmware'], 'true')
         self.assertEqual(entries['apt-setup/non-free-firmware'], 'true')
         packages = set(entries['pkgsel/include'].split())
-        self.assertTrue({'amd64-microcode', 'firmware-misc-nonfree', 'openssh-server', 'sudo', 'python3-apt', 'apparmor', 'ethtool', 'pciutils'} <= packages)
+        self.assertTrue({'amd64-microcode', 'firmware-misc-nonfree', 'firmware-amd-graphics', 'openssh-server', 'sudo', 'python3-apt', 'apparmor', 'ethtool', 'pciutils', 'systemd-timesyncd'} <= packages)
         self.assertFalse({'k3s', 'kubelet', 'task-desktop', 'xorg', 'gnome', 'kde-plasma-desktop', 'docker.io'} & packages)
         for name in ['grub-entry.cfg', 'isolinux-entry.cfg']:
             boot = (ROOT / 'installer/media' / name).read_text()
             self.assertIn('preseed/file=/cdrom/preseed.cfg', boot)
             self.assertNotIn('/gtk/', boot)
-        apt = read_yaml(ROLE / 'tasks/packages.yml')[0]['ansible.builtin.apt']
+        package_tasks = read_yaml(ROLE / 'tasks/packages.yml')
+        apt = next(task['ansible.builtin.apt'] for task in package_tasks if 'ansible.builtin.apt' in task)
         self.assertFalse(apt['install_recommends'])
-        self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree', 'ethtool', 'pciutils'} <= set(apt['name']))
+        self.assertEqual(apt['policy_rc_d'], 101)
+        self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree', 'firmware-amd-graphics', 'ethtool', 'pciutils', 'lm-sensors', 'iperf3', 'nftables', 'systemd-timesyncd', 'irqbalance', 'linux-cpupower', 'powertop'} <= set(apt['name']))
+
+    def test_host_tools_do_not_enable_benchmark_or_power_autotuning(self):
+        tasks = read_yaml(ROLE / 'tasks/packages.yml')
+        selection = next(task['ansible.builtin.debconf'] for task in tasks if 'ansible.builtin.debconf' in task)
+        self.assertEqual(selection, dict(name='iperf3', question='iperf3/start_daemon', value='false', vtype='boolean'))
+        services = next(task for task in tasks if 'ansible.builtin.systemd_service' in task)
+        self.assertEqual(set(services['loop']), {'iperf3', 'powertop'})
+        self.assertFalse(services['ansible.builtin.systemd_service']['enabled'])
+        self.assertEqual(services['ansible.builtin.systemd_service']['state'], 'stopped')
+        host_tasks = read_yaml(ROLE / 'tasks/host.yml')
+        ntp, irq = [task['ansible.builtin.systemd_service'] for task in host_tasks]
+        self.assertEqual(ntp, dict(name='systemd-timesyncd', enabled=True, state='started'))
+        self.assertTrue(self.context['microserver_irqbalance_enabled'])
+        for enabled, state in [(True, 'started'), (False, 'stopped')]:
+            context = dict(self.context, microserver_irqbalance_enabled=enabled)
+            self.assertEqual(ENV.from_string(irq['enabled']).render(**context), enabled)
+            self.assertEqual(ENV.from_string(irq['state']).render(**context), state)
+        exporter = next(task for task in self.monitoring if task['name'] == 'Bind the Debian node exporter to loopback')
+        args = exporter['ansible.builtin.copy']['content']
+        for collector in ['hwmon', 'netdev', 'netclass']:
+            self.assertIn(f'--collector.{collector}', args)
+        self.assertIn('--web.listen-address=127.0.0.1:9100', args)
 
     def test_target_boundary(self):
         task = read_yaml(ROOT / 'ansible/microserver.yml')[0]['pre_tasks'][0]
