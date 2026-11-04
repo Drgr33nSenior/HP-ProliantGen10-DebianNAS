@@ -2,41 +2,143 @@
   "uid": "microserver",
   "title": "MicroServer",
   "schemaVersion": 39,
-  "version": 1,
-  "tags": ["microserver", "storage"],
+  "version": 2,
+  "tags": ["microserver","storage"],
   "refresh": "30s",
-  "time": {"from": "now-1h", "to": "now"},
+  "time": {"from":"now-1h","to":"now"},
+  "description": "MicroServer host health, CPU/APU and DIMM temperatures, Docker resources and network traffic.",
   "panels": [
     {
-      "id": 1, "title": "CPU busy", "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
-      "targets": [{"refId": "A", "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"microserver-node\",mode=\"idle\"}[5m])))"}]
+      "id": 9,
+      "title": "Container status",
+      "type": "stat",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "Current state of each Docker container.",
+      "gridPos": {"x":0,"y":0,"w":12,"h":4},
+      "fieldConfig": {"defaults":{"unit":"short","min":0,"noValue":"No data","mappings":[{"type":"value","options":{"0":{"text":"Stopped","color":"red"},"1":{"text":"Running","color":"green"}}}]},"overrides":[]},
+      "targets": [{"refId":"A","expr":"microserver_docker_container_running{job=\"microserver-node\"}","legendFormat":"{{container}}","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":false,"instant":true}],
+      "options": {"reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"colorMode":"value","graphMode":"none","textMode":"value_and_name"}
     },
     {
-      "id": 2, "title": "Memory used", "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
-      "targets": [{"refId": "A", "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"microserver-node\"} / node_memory_MemTotal_bytes{job=\"microserver-node\"})"}]
+      "id": 10,
+      "title": "Docker telemetry",
+      "type": "stat",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "Collection runs every minute. Measurements older than three minutes are unavailable.",
+      "gridPos": {"x":12,"y":0,"w":12,"h":4},
+      "fieldConfig": {"defaults":{"unit":"short","min":0,"noValue":"No data","mappings":[{"type":"value","options":{"0":{"text":"Unavailable","color":"red"},"1":{"text":"Current","color":"green"}}}]},"overrides":[]},
+      "targets": [{"refId":"A","expr":"microserver_docker_collection_success{job=\"microserver-node\"} * on(job,instance) (time() - microserver_docker_collection_timestamp_seconds{job=\"microserver-node\"} < bool 180)","legendFormat":"Collection","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":false,"instant":true}],
+      "options": {"reduceOptions":{"calcs":["lastNotNull"],"fields":"","values":false},"colorMode":"value","graphMode":"none","textMode":"value_and_name"}
     },
     {
-      "id": 3, "title": "Filesystem space used", "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
-      "targets": [{"refId": "A", "legendFormat": "{{mountpoint}}", "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"microserver-node\",fstype=~\"ext4|xfs|zfs|btrfs\"} / node_filesystem_size_bytes{job=\"microserver-node\",fstype=~\"ext4|xfs|zfs|btrfs\"})"}]
+      "id": 1,
+      "title": "CPU busy",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "",
+      "gridPos": {"x":0,"y":4,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"percent","min":0,"noValue":"No data","max":100},"overrides":[]},
+      "targets": [{"refId":"A","expr":"100 * (1 - avg(rate(node_cpu_seconds_total{job=\"microserver-node\",mode=\"idle\"}[5m])))","legendFormat":"CPU busy","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
     },
     {
-      "id": 4, "title": "Disk reads and writes", "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
-      "fieldConfig": {"defaults": {"unit": "Bps", "min": 0}},
-      "targets": [
-        {"refId": "A", "legendFormat": "{{device}} read", "expr": "rate(node_disk_read_bytes_total{job=\"microserver-node\"}[5m])"},
-        {"refId": "B", "legendFormat": "{{device}} write", "expr": "rate(node_disk_written_bytes_total{job=\"microserver-node\"}[5m])"}
-      ]
+      "id": 2,
+      "title": "Memory used",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "",
+      "gridPos": {"x":12,"y":4,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"percent","min":0,"noValue":"No data","max":100},"overrides":[]},
+      "targets": [{"refId":"A","expr":"100 * (1 - node_memory_MemAvailable_bytes{job=\"microserver-node\"} / node_memory_MemTotal_bytes{job=\"microserver-node\"})","legendFormat":"Memory used","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
+    },
+    {
+      "id": 3,
+      "title": "Filesystem space used",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "",
+      "gridPos": {"x":0,"y":11,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"percent","min":0,"noValue":"No data","max":100},"overrides":[]},
+      "targets": [{"refId":"A","expr":"100 * (1 - node_filesystem_avail_bytes{job=\"microserver-node\",fstype=~\"ext4|xfs|zfs|btrfs\"} / node_filesystem_size_bytes{job=\"microserver-node\",fstype=~\"ext4|xfs|zfs|btrfs\"})","legendFormat":"{{mountpoint}}","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
+    },
+    {
+      "id": 4,
+      "title": "Disk reads and writes",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "Physical disks; logical-volume counters are excluded to avoid duplicate throughput.",
+      "gridPos": {"x":12,"y":11,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"Bps","min":0,"noValue":"No data"},"overrides":[]},
+      "targets": [{"refId":"A","expr":"rate(node_disk_read_bytes_total{job=\"microserver-node\",device=~\"sd[a-z]+|nvme[0-9]+n[0-9]+\"}[5m])","legendFormat":"{{device}} read","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false},{"refId":"B","expr":"rate(node_disk_written_bytes_total{job=\"microserver-node\",device=~\"sd[a-z]+|nvme[0-9]+n[0-9]+\"}[5m])","legendFormat":"{{device}} write","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
+    },
+    {
+      "id": 5,
+      "title": "CPU and APU temperature",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "Temperatures exposed by the CPU and onboard graphics drivers.",
+      "gridPos": {"x":0,"y":18,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"celsius","min":0,"noValue":"No data"},"overrides":[]},
+      "targets": [{"refId":"A","expr":"node_hwmon_temp_celsius{job=\"microserver-node\"} * on(job,instance,chip) group_left(chip_name) node_hwmon_chip_names{job=\"microserver-node\",chip_name=~\"k10temp|amdgpu\"}","legendFormat":"{{chip_name}} {{sensor}}","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
+    },
+    {
+      "id": 6,
+      "title": "DIMM temperatures and limits",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "Measured DIMM temperatures and the actual configured warning and critical limits.",
+      "gridPos": {"x":12,"y":18,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"celsius","min":0,"noValue":"No data"},"overrides":[]},
+      "targets": [{"refId":"A","expr":"node_hwmon_temp_celsius{job=\"microserver-node\"} * on(job,instance,chip) group_left(chip_name) node_hwmon_chip_names{job=\"microserver-node\",chip_name=\"jc42\"}","legendFormat":"{{chip}} temperature","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false},{"refId":"B","expr":"node_hwmon_temp_max_celsius{job=\"microserver-node\"} * on(job,instance,chip) group_left(chip_name) node_hwmon_chip_names{job=\"microserver-node\",chip_name=\"jc42\"}","legendFormat":"{{chip}} warning","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false},{"refId":"C","expr":"node_hwmon_temp_crit_celsius{job=\"microserver-node\"} * on(job,instance,chip) group_left(chip_name) node_hwmon_chip_names{job=\"microserver-node\",chip_name=\"jc42\"}","legendFormat":"{{chip}} critical","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
+    },
+    {
+      "id": 7,
+      "title": "Container CPU",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "100% equals one CPU core. Rates need at least two collection samples.",
+      "gridPos": {"x":0,"y":25,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"percent","min":0,"noValue":"No data"},"overrides":[]},
+      "targets": [{"refId":"A","expr":"100 * rate(microserver_docker_container_cpu_usage_seconds_total{job=\"microserver-node\"}[5m])","legendFormat":"{{container}}","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
+    },
+    {
+      "id": 8,
+      "title": "Container memory",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "Memory working set: current usage minus inactive file cache.",
+      "gridPos": {"x":12,"y":25,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"bytes","min":0,"noValue":"No data"},"overrides":[]},
+      "targets": [{"refId":"A","expr":"microserver_docker_container_memory_working_set_bytes{job=\"microserver-node\"}","legendFormat":"{{container}}","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
+    },
+    {
+      "id": 11,
+      "title": "Container memory limit used",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "Working set as a percentage of each container's actual memory limit.",
+      "gridPos": {"x":0,"y":32,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"percent","min":0,"noValue":"No data","max":100},"overrides":[]},
+      "targets": [{"refId":"A","expr":"100 * microserver_docker_container_memory_working_set_bytes{job=\"microserver-node\"} / (microserver_docker_container_memory_limit_bytes{job=\"microserver-node\"} > 0)","legendFormat":"{{container}}","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
+    },
+    {
+      "id": 12,
+      "title": "Network traffic",
+      "type": "timeseries",
+      "datasource": {"type":"prometheus","uid":"prometheus"},
+      "description": "",
+      "gridPos": {"x":12,"y":32,"w":12,"h":7},
+      "fieldConfig": {"defaults":{"unit":"Bps","min":0,"noValue":"No data"},"overrides":[]},
+      "targets": [{"refId":"A","expr":"rate(node_network_receive_bytes_total{job=\"microserver-node\",device!~\"lo|veth.*|docker.*|br-.*\"}[5m])","legendFormat":"{{device}} receive","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false},{"refId":"B","expr":"rate(node_network_transmit_bytes_total{job=\"microserver-node\",device!~\"lo|veth.*|docker.*|br-.*\"}[5m])","legendFormat":"{{device}} transmit","datasource":{"type":"prometheus","uid":"prometheus"},"editorMode":"code","format":"time_series","range":true,"instant":false}],
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi","sort":"desc"}}
     }
   ]
 }

@@ -16,3 +16,8 @@ groups:
         for: 5m
         labels: {severity: warning}
         annotations: {summary: 'MicroServer filesystem free space below 15%'}
+      - alert: MicroServerDockerMetricsUnavailable
+        expr: '(microserver_docker_collection_success{job="microserver-node"} != 1 or absent(microserver_docker_collection_success{job="microserver-node"}) or time() - microserver_docker_collection_timestamp_seconds{job="microserver-node"} > 180) and on(job) up{job="microserver-node"} == 1'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'MicroServer Docker metrics are unavailable or stale'}

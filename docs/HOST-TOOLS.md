@@ -52,6 +52,49 @@ configure. This stops/disables
 the daemon; it does not restore a previous IRQ mask. Reboot or restore separately
 recorded masks before comparing an unbalanced baseline.
 
+## Docker statistics
+
+The monitoring stage installs a root-owned collector, a systemd service and a
+60-second timer. The service and timer start only when
+`microserver_monitoring_enabled: true`. The collector reads Docker's version,
+container list and one-shot resource statistics through `/run/docker.sock`.
+It issues only GET requests and does not inspect container environments.
+Root socket access stays in this short host job; Grafana and Prometheus retain
+their existing non-root users and mounts.
+
+The collector uses Python's standard library to parse Docker JSON. Debian's
+existing Python interpreter is sufficient. Collection supports at most 32
+containers, bounds API response sizes and request time, and has a 20-second
+systemd timeout. The service has a 0.1 CPU ceiling, 64 MiB memory limit, no
+capabilities and no IP networking. The host filesystem is read-only for the
+job, with an explicit write allowance for its metrics directory.
+
+Node exporter's textfile collector reads
+`/var/lib/microserver/node-exporter/docker.prom`. Atomic replacement prevents
+partial snapshots. The metrics include running state, cumulative CPU seconds,
+memory usage/working set/limit and available task counts. Memory working set
+subtracts inactive file cache; it is not the process RSS value. Host networking
+makes per-container network attribution unsuitable here, so the dashboard shows
+the host interface counters separately.
+
+A collection error publishes a failure marker instead of partial container
+statistics. A stalled job leaves an older timestamp. Measurements older than
+three minutes are stale; failed, missing or stale collection alerts have a
+five-minute hold while node exporter is available. These alerts use the existing
+local Alertmanager route; external notification delivery remains separate.
+
+After owner activation, inspect the timer and last service result:
+
+```sh
+systemctl status microserver-docker-metrics.timer --no-pager
+systemctl show microserver-docker-metrics.service -p Result -p ExecMainStatus
+sudo /usr/bin/python3 /usr/local/libexec/microserver-docker-metrics.py --stdout
+```
+
+The last command reads live statistics without writing a metrics file. Allow
+two timer samples for new CPU rate graphs. Recheck service limits and actual
+overhead on the NAS after deployment.
+
 ## DIMM temperature limits
 
 The installed Micron modules report part numbers `9ASF1G72AZ-2G3B1` (8 GB)

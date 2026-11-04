@@ -17,6 +17,9 @@
     - {path: /var/lib/microserver/prometheus, uid: 65534}
     - {path: /var/lib/microserver/grafana, uid: 472}
     - {path: /var/lib/microserver/alertmanager, uid: 65534}
+    - {path: /var/lib/microserver/node-exporter, uid: 0}
+    - {path: /usr/local, uid: 0}
+    - {path: /usr/local/libexec, uid: 0}
   register: microserver_monitoring_paths
 
 - name: Reject symlinked or writable monitoring directories
@@ -39,6 +42,8 @@
     - /etc/microserver/monitoring/provisioning/datasources
     - /etc/microserver/monitoring/provisioning/dashboards
     - /var/lib/microserver
+    - /var/lib/microserver/node-exporter
+    - /usr/local/libexec
 
 - name: Keep private credential preparation local to the owner
   ansible.builtin.file:
@@ -123,11 +128,44 @@
   ansible.builtin.copy:
     dest: /etc/default/prometheus-node-exporter
     content: |
-      ARGS="--web.listen-address=127.0.0.1:9100 --collector.disable-defaults --collector.cpu --collector.meminfo --collector.filesystem --collector.diskstats --collector.pressure --collector.stat --collector.time --collector.uname --collector.zfs --collector.hwmon --collector.netdev --collector.netclass"
+      ARGS="--web.listen-address=127.0.0.1:9100 --collector.disable-defaults --collector.cpu --collector.meminfo --collector.filesystem --collector.diskstats --collector.pressure --collector.stat --collector.time --collector.uname --collector.zfs --collector.hwmon --collector.netdev --collector.netclass --collector.textfile --collector.textfile.directory=/var/lib/microserver/node-exporter"
     owner: root
     group: root
     mode: '0644'
   notify: Restart MicroServer node exporter
+
+- name: Inspect the Docker collector program without following symlinks
+  ansible.builtin.stat:
+    path: /usr/local/libexec/microserver-docker-metrics.py
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_docker_program
+
+- name: Require a protected Docker collector program path
+  ansible.builtin.assert:
+    that:
+      - not microserver_docker_program.stat.exists or (microserver_docker_program.stat.isreg | default(false) and not microserver_docker_program.stat.islnk | default(false) and microserver_docker_program.stat.uid == 0 and microserver_docker_program.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+    fail_msg: Refuse an untrusted or symlinked Docker collector program.
+
+- name: Install the bounded Docker statistics collector
+  ansible.builtin.copy:
+    src: microserver-docker-metrics.py
+    dest: /usr/local/libexec/microserver-docker-metrics.py
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Refresh MicroServer Docker metrics
+
+- name: Install the Docker collector service and timer
+  ansible.builtin.copy:
+    src: '{{ item }}'
+    dest: '/etc/systemd/system/{{ item }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [microserver-docker-metrics.service, microserver-docker-metrics.timer]
+  notify: Refresh MicroServer Docker metrics
 
 - name: Install the monitoring service
   ansible.builtin.copy:
@@ -179,6 +217,20 @@
 - name: Apply pending service configuration before readiness checks
   ansible.builtin.meta: flush_handlers
 
+- name: Collect an initial Docker metrics snapshot after explicit activation
+  ansible.builtin.systemd_service:
+    name: microserver-docker-metrics.service
+    state: started
+    daemon_reload: true
+  when: microserver_monitoring_enabled | bool
+
+- name: Enable periodic Docker collection after explicit activation
+  ansible.builtin.systemd_service:
+    name: microserver-docker-metrics.timer
+    enabled: true
+    state: started
+  when: microserver_monitoring_enabled | bool
+
 - name: Check local monitoring readiness without collecting application content
   ansible.builtin.uri:
     url: '{{ item }}'
@@ -194,4 +246,17 @@
     - http://127.0.0.1:3000/api/health
     - http://127.0.0.1:9093/-/ready
     - http://127.0.0.1:9100/
+  when: microserver_monitoring_enabled | bool and not ansible_check_mode
+
+- name: Require the bundled Prometheus plugin frontend after activation
+  ansible.builtin.uri:
+    url: http://127.0.0.1:3000/public/plugins/prometheus/module.js
+    method: HEAD
+    return_content: false
+    status_code: 200
+    timeout: 5
+  register: microserver_prometheus_plugin
+  until: microserver_prometheus_plugin.status | default(0) == 200
+  retries: 12
+  delay: 5
   when: microserver_monitoring_enabled | bool and not ansible_check_mode

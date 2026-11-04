@@ -1,0 +1,6 @@
+# Offline dependency stub for systemd-analyze verify. Never started.
+[Unit]
+Description=Fixture Docker dependency
+
+[Service]
+ExecStart=/bin/true

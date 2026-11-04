@@ -45,7 +45,9 @@ backup receiving; AI services and CPU-intensive processing stay on Threadripper.
 The profile records immutable image pins in `observability/versions.json`.
 Its initial workstation dashboards and pins came from the workstation project;
 this repository owns their subsequent review and updates. See [NOTICE](NOTICE).
-A separate MicroServer dashboard and NAS-specific rules cover host metrics.
+A separate MicroServer dashboard covers host resources, network traffic,
+CPU/APU and DIMM temperatures, DIMM limits and per-container Docker resources.
+NAS-specific rules cover host health and failed or stale Docker collection.
 Workstation dashboards remain incomplete until telemetry cutover is qualified.
 Cluster-specific workstation absence/GPU rules are not reused as NAS health rules.
 
@@ -240,9 +242,10 @@ The role checks only file metadata, without checksums or credential retrieval.
 
 Set `microserver_monitoring_enabled: true` in the private variable file and
 repeat the configure apply. It validates Compose and starts the native exporter,
-Docker and `microserver-monitoring.service`, then checks four local readiness
-endpoints. Runtime containers use non-root UIDs, dropped capabilities, read-only
-roots, bounded memory/CPU/PIDs, bounded Docker logs and immutable images.
+Docker and `microserver-monitoring.service`, then checks service readiness
+and the bundled Prometheus plugin asset. Runtime containers use non-root UIDs,
+dropped capabilities, read-only roots, bounded memory/CPU/PIDs, bounded Docker
+logs and immutable images.
 The three container memory limits total 2304 MiB, excluding Docker, the native
 exporter, OS and ZFS cache; actual usage remains to be measured.
 Initial CPU ceilings for the dual-core X3216 are 0.5 CPU for Prometheus,
@@ -252,6 +255,23 @@ concurrency starts at two; qualify ingestion and dashboard latency on hardware.
 The exporter includes available hardware temperature/fan readings and network
 interface counters through its hwmon, netdev and netclass collectors. Sensor
 availability still depends on the actual hardware and kernel driver.
+
+The dashboard uses the Prometheus plugin bundled in the pinned Grafana image.
+Automatic plugin installation and startup updates are disabled. Grafana 13.2
+[packages Prometheus as a standalone plugin](https://grafana.com/docs/grafana/latest/datasources/prometheus/#plugin-updates);
+an updater can stop the bundled plugin before failing to replace files on the
+read-only container filesystem. Keep plugin updates in the reviewed image-update
+workflow. Plugin signature checks remain enabled.
+
+A host timer collects Docker statistics every minute through the local Unix
+socket. It uses the existing Debian Python interpreter and standard library,
+with no additional Python packages or network listener. Each short job has
+a 64 MiB memory limit, a 0.1 CPU ceiling and a 20-second service timeout.
+Node exporter reads atomically replaced text files; containers receive no Docker
+socket access. The dashboard shows container state, CPU time rates, memory
+working set and memory-limit use. CPU rates need two collection samples.
+Failed or stale collection raises a local alert. See
+[Docker collection and diagnosis](docs/HOST-TOOLS.md#docker-statistics).
 
 Linux host networking lets containers reach the loopback-only native exporter.
 Grafana 3000, Prometheus 9090, Alertmanager 9093 and node exporter 9100 bind only

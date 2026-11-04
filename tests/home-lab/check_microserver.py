@@ -1,13 +1,18 @@
 """Exercise the actual installer guards and templates without contacting a host."""
 import copy
 import configparser
+import importlib.util
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import jinja2
@@ -348,11 +353,58 @@ class MicroServerTests(unittest.TestCase):
         self.assertIn('--query.max-concurrency=2', config['services']['prometheus']['command'])
         self.assertIn('--web.listen-address=127.0.0.1:9093', config['services']['alertmanager']['command'])
         self.assertEqual(config['services']['grafana']['environment']['GF_SERVER_HTTP_ADDR'], '127.0.0.1')
+        grafana = config['services']['grafana']['environment']
+        self.assertEqual(grafana['GF_PLUGINS_PREINSTALL_DISABLED'], 'true')
+        self.assertEqual(grafana['GF_PLUGINS_PREINSTALL_AUTO_UPDATE'], 'false')
+        self.assertNotIn('GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS', grafana)
         if len(sys.argv) > 1:
             output = Path(sys.argv[1])
             output.mkdir(parents=True, exist_ok=True)
             (output / 'compose.yaml').write_text(str(compose))
             (output / 'prometheus.yaml').write_text(str(ENV.from_string((ROLE / 'templates/prometheus.yaml.j2').read_text()).render(**self.context)))
+
+    def test_dashboard_queries_have_data_and_correct_units(self):
+        dashboard = json.loads((ROLE / 'files/microserver-dashboard.json').read_text())
+        datasource = read_yaml(ROOT / 'observability/config/datasources.metrics.yaml')['datasources'][0]
+        expected = {(1, 'A'): 25, (2, 'A'): 75, (3, 'A'): 80,
+                    (4, 'A'): 10, (4, 'B'): 20, (5, 'A'): 82,
+                    (6, 'A'): 61, (6, 'B'): 150, (6, 'C'): 170,
+                    (7, 'A'): 20, (8, 'A'): 50, (9, 'A'): 1,
+                    (10, 'A'): 1, (11, 'A'): 50, (12, 'A'): 1, (12, 'B'): 2}
+        queries = []
+        covered = set()
+        for panel in dashboard['panels']:
+            self.assertEqual(panel['datasource']['uid'], datasource['uid'])
+            for target in panel['targets']:
+                key = (panel['id'], target['refId'])
+                covered.add(key)
+                self.assertEqual(target['datasource']['uid'], datasource['uid'])
+                self.assertEqual(target['range'], panel['type'] == 'timeseries')
+                self.assertEqual(target['instant'], panel['type'] == 'stat')
+                count = 2 if panel['id'] in [5, 6] else 1
+                for aggregation, value in [('sum', expected[key]), ('count', count)]:
+                    queries.append(dict(expr=f"{aggregation}({target['expr']})", eval_time='6m',
+                                        exp_samples=[dict(labels='{}', value=value)]))
+        self.assertEqual(covered, set(expected))
+        if len(sys.argv) > 1:
+            series = read_yaml(ROOT / 'tests/fixtures/microserver/dashboard_series.yaml')
+            test = dict(rule_files=[], evaluation_interval='1m', tests=[
+                dict(interval='1m', input_series=series, promql_expr_test=queries)])
+            (Path(sys.argv[1]) / 'dashboard_test.yaml').write_text(yaml.safe_dump(test))
+
+    def test_docker_collection_activation_and_plugin_readiness_order(self):
+        services = [task for task in self.monitoring if 'ansible.builtin.systemd_service' in task]
+        for task in services:
+            self.assertFalse(ENV.compile_expression(task['when'])(microserver_monitoring_enabled=False))
+            self.assertTrue(ENV.compile_expression(task['when'])(microserver_monitoring_enabled=True))
+        readiness = [task for task in self.monitoring if 'ansible.builtin.uri' in task]
+        for task in readiness:
+            self.assertGreater(self.monitoring.index(task), max(map(self.monitoring.index, services)))
+        protected = next(task for task in self.monitoring if task['name'].startswith('Require a protected Docker'))
+        metadata = dict(exists=True, isreg=True, islnk=False, uid=0, mode='0644')
+        self.assertTrue(assertions(protected, dict(microserver_docker_program=dict(stat=metadata))))
+        for change in [dict(islnk=True), dict(uid=1000), dict(mode='0666')]:
+            self.assertFalse(assertions(protected, dict(microserver_docker_program=dict(stat=dict(metadata, **change)))))
 
     def test_secret_metadata_and_defaults(self):
         self.assertFalse(read_yaml(ROLE / 'defaults/main.yml')['microserver_monitoring_enabled'])
@@ -365,6 +417,105 @@ class MicroServerTests(unittest.TestCase):
         self.assertEqual(inspect_task['ansible.builtin.stat']['get_checksum'], False)
         self.assertEqual(inspect_task['ansible.builtin.stat']['follow'], False)
         self.assertEqual(inspect_task['when'], 'microserver_monitoring_enabled | bool')
+
+
+class DockerMetricsTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('docker_metrics', ROLE / 'files/microserver-docker-metrics.py')
+        self.collector = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.collector)
+        self.running = dict(Id='a' * 64, Names=['/running'], State='running')
+        self.stopped = dict(Id='b' * 64, Names=['/stopped'], State='exited')
+        self.stats = dict(cpu_stats=dict(cpu_usage=dict(total_usage=2_000_000_000)),
+                          memory_stats=dict(usage=100, limit=512, stats=dict(inactive_file=40)),
+                          pids_stats=dict(current=7))
+
+    def test_running_and_stopped_containers_and_working_set(self):
+        with mock.patch.object(self.collector, 'docker_json', side_effect=[
+                {'ApiVersion': '1.45'}, [self.running, self.stopped], self.stats]) as request:
+            lines = self.collector.collect()
+        content = self.collector.render(lines, True, 1234)
+        self.assertIn('container_running{container="stopped"} 0\n', content)
+        self.assertNotIn('container_cpu_usage_seconds_total{container="stopped"}', content)
+        self.assertIn('container_cpu_usage_seconds_total{container="running"} 2.0\n', content)
+        self.assertIn('container_memory_working_set_bytes{container="running"} 60\n', content)
+        self.assertIn('container_memory_limit_bytes{container="running"} 512\n', content)
+        self.assertIn('container_pids{container="running"} 7\n', content)
+        self.assertEqual([call.args[0] for call in request.call_args_list], [
+            '/version', '/v1.45/containers/json?all=true',
+            '/v1.45/containers/' + 'a' * 64 + '/stats?stream=false&one-shot=true'])
+        if len(sys.argv) > 1:
+            (Path(sys.argv[1]) / 'docker_metrics.prom').write_text(content)
+
+    def test_cgroup_v1_cache_and_counter_reset(self):
+        self.stats['memory_stats']['stats'] = dict(total_inactive_file=200)
+        self.stats['cpu_stats']['cpu_usage']['total_usage'] = 100_000_000
+        with mock.patch.object(self.collector, 'docker_json', side_effect=[
+                {'ApiVersion': '1.45'}, [self.running], self.stats]):
+            content = '\n'.join(self.collector.collect())
+        self.assertIn('container_memory_working_set_bytes{container="running"} 0', content)
+        self.assertIn('container_cpu_usage_seconds_total{container="running"} 0.1', content)
+
+    def test_invalid_identity_and_container_limit_stop_before_stats(self):
+        for containers in [[dict(self.running, Id='../inspect')],
+                           [dict(self.running, Names=['/bad"label'])],
+                           [self.running] * (self.collector.MAX_CONTAINERS + 1)]:
+            with self.subTest(containers=len(containers)):
+                with mock.patch.object(self.collector, 'docker_json', side_effect=[
+                        {'ApiVersion': '1.45'}, containers]) as request:
+                    with self.assertRaises(self.collector.CollectionError):
+                        self.collector.collect()
+                self.assertEqual(request.call_count, 2)
+
+    def test_empty_daemon_is_successful_and_does_not_invent_containers(self):
+        with mock.patch.object(self.collector, 'docker_json', side_effect=[
+                {'ApiVersion': '1.45'}, []]):
+            self.assertEqual(self.collector.collect(), ['microserver_docker_containers 0'])
+
+    def test_stdout_failure_redacts_error_and_writes_no_file(self):
+        output, error = io.StringIO(), io.StringIO()
+        with mock.patch.object(self.collector, 'collect', side_effect=ValueError('private diagnostic detail')):
+            with mock.patch.object(self.collector, 'write_metrics') as writer:
+                with mock.patch.object(sys, 'argv', ['collector', '--stdout']), mock.patch.object(sys, 'stdout', output), mock.patch.object(sys, 'stderr', error):
+                    self.assertEqual(self.collector.main(), 1)
+                writer.assert_not_called()
+        self.assertIn('microserver_docker_collection_success 0\n', output.getvalue())
+        self.assertNotIn('container_running{', output.getvalue())
+        self.assertNotIn('private diagnostic detail', error.getvalue())
+
+    def test_atomic_write_preserves_previous_snapshot_on_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / 'docker.prom'
+            with mock.patch.object(self.collector, 'OUTPUT', destination):
+                self.collector.write_metrics('previous\n')
+                self.assertEqual(destination.stat().st_mode & 0o777, 0o644)
+                with mock.patch.object(self.collector.os, 'replace', side_effect=OSError('replace failed')):
+                    with self.assertRaises(OSError):
+                        self.collector.write_metrics('next\n')
+                self.assertEqual(destination.read_text(), 'previous\n')
+                self.assertEqual(list(Path(directory).iterdir()), [destination])
+                self.collector.write_metrics('next\n')
+                self.assertEqual(destination.read_text(), 'next\n')
+
+    def test_http_is_get_only_bounded_and_closes_on_error(self):
+        for status, body in [(200, b'{"ApiVersion":"1.45"}'),
+                             (500, b'private response body'),
+                             (200, b'x' * (self.collector.MAX_RESPONSE + 1))]:
+            connection = mock.Mock()
+            connection.getresponse.return_value.status = status
+            connection.getresponse.return_value.read.return_value = body
+            with mock.patch.object(self.collector, 'DockerConnection', return_value=connection):
+                if status == 200 and len(body) < self.collector.MAX_RESPONSE:
+                    self.assertEqual(self.collector.docker_json('/version', time.monotonic() + 5), {'ApiVersion': '1.45'})
+                else:
+                    with self.assertRaises(self.collector.CollectionError):
+                        self.collector.docker_json('/version', time.monotonic() + 5)
+            connection.request.assert_called_once_with('GET', '/version')
+            if status == 200:
+                connection.getresponse.return_value.read.assert_called_once_with(self.collector.MAX_RESPONSE + 1)
+            connection.close.assert_called_once()
+        with self.assertRaises(self.collector.CollectionError):
+            self.collector.docker_json('/version', time.monotonic() - 1)
 
 
 if __name__ == '__main__':

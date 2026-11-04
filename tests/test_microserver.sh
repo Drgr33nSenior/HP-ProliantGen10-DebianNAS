@@ -9,6 +9,13 @@ fi
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_microserver.py" "$work"
+if [[ $(uname -s) == Linux ]] && command -v systemd-analyze >/dev/null 2>&1; then
+  cp "$root/ansible/roles/debian_microserver/files/microserver-docker-metrics.service" "$work/"
+  cp "$root/ansible/roles/debian_microserver/files/microserver-docker-metrics.timer" "$work/"
+  cp "$root/tests/fixtures/microserver/docker.service" "$work/"
+  SYSTEMD_UNIT_PATH="$work:" systemd-analyze verify --man=no --generators=no \
+    "$work/microserver-docker-metrics.service" "$work/microserver-docker-metrics.timer"
+fi
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   docker compose --project-name microserver --file "$work/compose.yaml" config --quiet
 else
@@ -19,6 +26,8 @@ if command -v promtool >/dev/null 2>&1; then
   cp "$root/ansible/roles/debian_microserver/files/alerts.yaml" "$work/alerts.yaml"
   cp "$root/tests/fixtures/microserver/alerts_test.yaml" "$work/alerts_test.yaml"
   (cd "$work" && promtool test rules alerts_test.yaml)
+  promtool test rules "$work/dashboard_test.yaml"
+  promtool check metrics <"$work/docker_metrics.prom"
 else
   echo 'SKIP: MicroServer Prometheus configuration and alert checks require promtool'
 fi

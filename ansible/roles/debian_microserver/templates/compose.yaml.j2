@@ -40,6 +40,8 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: 'false'
       GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
+      GF_PLUGINS_PREINSTALL_DISABLED: 'true'
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: 'false'
       GF_METRICS_ENABLED: 'true'
     volumes:
       - /etc/microserver/private/grafana-admin-password:/run/secrets/grafana-admin-password:ro

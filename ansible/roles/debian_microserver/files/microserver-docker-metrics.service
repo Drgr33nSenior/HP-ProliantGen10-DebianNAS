@@ -1,0 +1,20 @@
+[Unit]
+Description=Collect Docker resource metrics for the MicroServer
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/microserver-docker-metrics.py
+TimeoutStartSec=20
+CPUQuota=10%
+MemoryMax=64M
+TasksMax=8
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/lib/microserver/node-exporter

@@ -37,3 +37,46 @@ tests:
       - {eval_time: 12m, alertname: MicroServerMemoryLow, exp_alerts: []}
       - {eval_time: 12m, alertname: MicroServerFilesystemLow, exp_alerts: []}
       - {eval_time: 12m, alertname: MicroServerExporterMissing, exp_alerts: []}
+  - name: Failed Docker collection fires and recovers
+    interval: 1m
+    input_series:
+      - series: 'up{job="microserver-node"}'
+        values: '1x16'
+      - series: 'microserver_docker_collection_success{job="microserver-node"}'
+        values: '0x5 1x10'
+      - series: 'microserver_docker_collection_timestamp_seconds{job="microserver-node"}'
+        values: '0+60x16'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MicroServerDockerMetricsUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning, job: microserver-node}
+            exp_annotations: {summary: 'MicroServer Docker metrics are unavailable or stale'}
+      - {eval_time: 12m, alertname: MicroServerDockerMetricsUnavailable, exp_alerts: []}
+  - name: Stale Docker collection fires despite last success
+    interval: 1m
+    input_series:
+      - series: 'up{job="microserver-node"}'
+        values: '1x16'
+      - series: 'microserver_docker_collection_success{job="microserver-node"}'
+        values: '1x16'
+      - series: 'microserver_docker_collection_timestamp_seconds{job="microserver-node"}'
+        values: '0x16'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: MicroServerDockerMetricsUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning, job: microserver-node}
+            exp_annotations: {summary: 'MicroServer Docker metrics are unavailable or stale'}
+  - name: Missing Docker collection fires only when exporter is up
+    interval: 1m
+    input_series:
+      - series: 'up{job="microserver-node"}'
+        values: '1x5 0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MicroServerDockerMetricsUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning, job: microserver-node}
+            exp_annotations: {summary: 'MicroServer Docker metrics are unavailable or stale'}
+      - {eval_time: 12m, alertname: MicroServerDockerMetricsUnavailable, exp_alerts: []}
