@@ -19,6 +19,7 @@ for script in "${scripts[@]}"; do bash -n "$script"; done
 shellcheck "${scripts[@]}"
 shfmt -d -i 2 -ci "${scripts[@]}"
 ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ansible/microserver.yml
+ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ansible/owner-install.yml
 bash tests/test_microserver.sh
 bash tests/test_media.sh
 bash tests/test_usb.sh

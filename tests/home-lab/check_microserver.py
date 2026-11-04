@@ -22,6 +22,7 @@ ENV.filters['type_debug'] = lambda value: type(value).__name__
 ENV.filters['bool'] = lambda value: value is True or str(value).lower() in ('true', 'yes', '1')
 ENV.filters['from_json'] = json.loads
 ENV.filters['from_yaml_all'] = lambda value: list(yaml.safe_load_all(value))
+ENV.filters['dict2items'] = lambda value: [dict(key=key, value=item) for key, item in value.items()]
 
 
 def read_yaml(path):
@@ -190,7 +191,7 @@ class MicroServerTests(unittest.TestCase):
         self.assertEqual(selected.returncode, 0, selected.stderr)
         for task in self.storage:
             self.assertNotIn(task['name'], selected.stdout)
-        for name in ['packages', 'host', 'tuning', 'monitoring']:
+        for name in ['packages', 'host', 'sensors', 'tuning', 'monitoring']:
             for task in read_yaml(ROLE / f'tasks/{name}.yml'):
                 self.assertIn(task['name'], selected.stdout)
         configured = subprocess.run(command + ['configure'],
@@ -199,6 +200,63 @@ class MicroServerTests(unittest.TestCase):
         self.assertEqual(configured.returncode, 0, configured.stderr)
         for task in self.storage:
             self.assertIn(task['name'], configured.stdout)
+
+    def test_owner_production_entry_requires_explicit_intent(self):
+        task = read_yaml(ROOT / 'ansible/owner-install.yml')[0]['pre_tasks'][0]
+        valid = dict(microserver_environment='prd', microserver_owner_install=True,
+                     ansible_play_hosts_all=['nas'], ansible_facts=dict(
+                         distribution='Debian', distribution_major_version='13', architecture='x86_64'))
+        self.assertTrue(assertions(task, valid))
+        for change in [dict(microserver_owner_install=False), dict(microserver_environment='unmapped'),
+                       dict(microserver_environment='tst'), dict(ansible_play_hosts_all=['nas', 'other'])]:
+            self.assertFalse(assertions(task, dict(valid, **change)))
+        missing = dict(valid)
+        del missing['microserver_owner_install']
+        self.assertFalse(assertions(task, missing))
+        for field, value in [('distribution', 'Ubuntu'), ('distribution_major_version', '12'),
+                             ('architecture', 'aarch64')]:
+            invalid = copy.deepcopy(valid)
+            invalid['ansible_facts'][field] = value
+            self.assertFalse(assertions(task, invalid))
+
+    def test_dimm_limits_require_qualified_hardware_and_effective_readback(self):
+        self.assertFalse(self.context['microserver_dimm_limits_enabled'])
+        tasks = read_yaml(ROLE / 'tasks/sensors.yml')
+        qualification = next(task for task in tasks if task['name'].startswith('Require the qualified Micron'))
+        inventory = {'stdout_lines': ['\tManufacturer: Micron', '\tManufacturer: Micron',
+                                     '\tPart Number: 9ASF1G72AZ-2G3B1    ',
+                                     '\tPart Number: 18ASF2G72AZ-2G6D1   ']}
+        self.assertTrue(assertions(qualification, {'microserver_dimm_inventory': inventory}))
+        wrong = copy.deepcopy(inventory)
+        wrong['stdout_lines'][-1] = '\tPart Number: UNQUALIFIED-DIMM'
+        self.assertFalse(assertions(qualification, {'microserver_dimm_inventory': wrong}))
+        adapter_check = next(task for task in tasks if task['name'].startswith('Require both DIMM sensors on'))
+        readings = {'Adapter': 'SMBus PIIX4 adapter port 0 at 0b00', 'temp1': dict(
+            temp1_input=30, temp1_max=75, temp1_crit=85, temp1_crit_hyst=82,
+            temp1_max_alarm=0, temp1_crit_alarm=0)}
+        hardware = {f'jc42-i2c-7-{address}': copy.deepcopy(readings) for address in ['18', '1a']}
+        ctx = {'microserver_dimm_before': {'stdout': json.dumps(hardware)}}
+        expr = adapter_check['vars']['microserver_jc42_before']
+        sensors = ENV.from_string(expr).render(**ctx)
+        self.assertTrue(assertions(adapter_check, {'microserver_jc42_before': sensors}))
+        self.assertFalse(assertions(adapter_check, {'microserver_jc42_before': sensors[:1]}))
+        wrong_adapter = copy.deepcopy(sensors)
+        wrong_adapter[0]['value']['Adapter'] = 'Another adapter'
+        self.assertFalse(assertions(adapter_check, {'microserver_jc42_before': wrong_adapter}))
+        validation = tasks[-1]
+        self.assertTrue(assertions(validation, {'item': sensors[0]}))
+        for change in [dict(temp1_max=0), dict(temp1_crit=95), dict(temp1_crit_hyst=0),
+                       dict(temp1_input=80, temp1_max_alarm=1), dict(temp1_crit_alarm=1)]:
+            bad = copy.deepcopy(sensors[0])
+            bad['value']['temp1'].update(change)
+            self.assertFalse(assertions(validation, {'item': bad}))
+        profile = (ROLE / 'files/microserver-jc42.conf').read_text()
+        self.assertIn('bus "i2c-0" "SMBus PIIX4 adapter port 0 at 0b00"', profile)
+        self.assertIn('chip "jc42-i2c-0-18" "jc42-i2c-0-1a"', profile)
+        self.assertNotIn('ignore ', profile)
+        parser = next(task['ansible.builtin.copy'] for task in tasks if 'ansible.builtin.copy' in task)
+        self.assertEqual(parser['validate'], '/usr/bin/sensors -c %s -j')
+        self.assertNotIn('-s', parser['validate'].split())
 
     def test_required_identity_and_clients(self):
         self.assertTrue(assertions(self.storage[0], self.context))
@@ -234,7 +292,10 @@ class MicroServerTests(unittest.TestCase):
                     self.assertEqual(task['when'], 'microserver_dataset.rc == 1')
                     self.assertNotIn('-f', argv)
                 if task.get('check_mode') is False:
-                    self.assertIn(argv[:2], [['zpool', 'get'], ['zpool', 'list'], ['zfs', 'list'], ['zfs', 'get']])
+                    storage_read = argv[:2] in [['zpool', 'get'], ['zpool', 'list'], ['zfs', 'list'], ['zfs', 'get']]
+                    hardware_read = argv in [['/usr/sbin/dmidecode', '--type', '17'],
+                                             ['/usr/bin/sensors', '-c', '/dev/null', '-j']]
+                    self.assertTrue(storage_read or hardware_read, argv)
 
     def test_path_guards(self):
         task = next(task for task in self.storage if task['name'].startswith('Refuse untrusted'))

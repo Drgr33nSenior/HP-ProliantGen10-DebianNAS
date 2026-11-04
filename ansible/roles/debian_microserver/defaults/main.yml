@@ -6,3 +6,4 @@ microserver_share_uid: 0
 microserver_share_gid: 0
 microserver_monitoring_enabled: false
 microserver_irqbalance_enabled: true
+microserver_dimm_limits_enabled: false

@@ -8,3 +8,5 @@ microserver_share_gid: 0
 microserver_monitoring_enabled: false
 # Set false if measured IRQ placement/throughput regresses with balancing.
 microserver_irqbalance_enabled: true
+# Enable only for the Micron DIMM pair qualified in docs/HOST-TOOLS.md.
+microserver_dimm_limits_enabled: false

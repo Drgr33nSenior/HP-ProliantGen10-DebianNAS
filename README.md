@@ -93,6 +93,14 @@ Explicitly classify it as `dev`, `tst` or `int`; the default `unmapped` is rejec
 Keep SSH host-key checking enabled. Do not place passwords or private keys in
 either file. The examples deliberately contain no usable target or pool GUID.
 
+For a production NAS, keep the classification `prd`. The owner must launch
+[owner-install.yml](ansible/owner-install.yml) manually with
+`microserver_owner_install: true`; the normal playbook continues to reject
+production targets. Both entry points use the same role and storage checks.
+The owner entry point is not permission for an agent to mutate production.
+In the commands below, production owners substitute `ansible/owner-install.yml`
+for `ansible/microserver.yml` and add `-e '{"microserver_owner_install": true}'`.
+
 Run the following as the owner, substituting the private paths and host alias:
 
 ```sh
@@ -143,6 +151,21 @@ and CPU policy, and stages monitoring without selecting storage tasks. Keep
 credential. Then use `--tags monitoring` with that variable set to `true` to
 activate monitoring independently of pool creation. The full `configure` stage
 retains its storage checks before configuring NFS and monitoring.
+
+An owner-run production preparation command uses:
+
+```sh
+ANSIBLE_HOST_KEY_CHECKING=True ansible-playbook \
+  -i /path/to/private/inventory.ini --limit nas \
+  -e @/path/to/private/microserver.yml --ask-become-pass \
+  -e '{"microserver_owner_install": true}' \
+  --tags packages,host,tuning,monitoring ansible/owner-install.yml
+```
+
+Set the private inventory's lifecycle to `prd` before this command. It installs
+packages and stages monitoring while the data pool is being qualified. Enable
+`microserver_dimm_limits_enabled` only for the
+[qualified DIMMs and sensor adapter](docs/HOST-TOOLS.md#dimm-temperature-limits).
 
 ## 3. Create and record the data pool locally
 

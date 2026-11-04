@@ -1,0 +1,21 @@
+---
+# Run manually by the owner. Agents must not execute this against production.
+- name: Owner-run production MicroServer installation
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  pre_tasks:
+    - name: Require an explicit owner-run production installation
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: The owner must launch this production entry point for exactly one reviewed Debian 13 AMD64 MicroServer.
+      tags: [always]
+  roles:
+    - role: debian_microserver

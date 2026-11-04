@@ -11,6 +11,11 @@
   ansible.builtin.import_tasks: host.yml
   tags: [configure, host]
 
+- name: Configure the qualified DIMM temperature limits
+  ansible.builtin.import_tasks: sensors.yml
+  when: microserver_dimm_limits_enabled | bool
+  tags: [configure, host, sensors]
+
 - name: Configure TuneD CPU performance
   ansible.builtin.import_tasks: tuning.yml
   tags: [configure, tuning]

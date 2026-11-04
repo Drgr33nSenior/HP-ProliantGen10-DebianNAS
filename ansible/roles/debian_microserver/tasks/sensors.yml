@@ -1,0 +1,114 @@
+---
+- name: Ensure the DIMM qualification tools are present
+  ansible.builtin.apt:
+    name: [lm-sensors, dmidecode]
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Read DIMM metadata without logging unique hardware identifiers
+  ansible.builtin.command:
+    argv: [/usr/sbin/dmidecode, --type, '17']
+  register: microserver_dimm_inventory
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Require the qualified Micron DIMM pair before setting limits
+  ansible.builtin.assert:
+    that:
+      - >-
+        microserver_dimm_inventory.stdout_lines | map('trim') | select('match', '^Manufacturer:') | list == ['Manufacturer: Micron', 'Manufacturer: Micron']
+      - >-
+        microserver_dimm_inventory.stdout_lines | map('trim') | select('match', '^Part Number:') | sort | list == ['Part Number: 18ASF2G72AZ-2G6D1', 'Part Number: 9ASF1G72AZ-2G3B1']
+    fail_msg: DIMMs differ from the qualified pair; review their specifications before enabling this temperature policy.
+
+- name: Inspect available sensors without applying configuration
+  ansible.builtin.command:
+    argv: [/usr/bin/sensors, -c, /dev/null, -j]
+  register: microserver_dimm_before
+  changed_when: false
+  check_mode: false
+
+- name: Require both DIMM sensors on the qualified adapter
+  ansible.builtin.assert:
+    that:
+      - microserver_jc42_before | length == 2
+      - microserver_jc42_before | selectattr('key', 'match', '^jc42-i2c-[0-9]+-18$') | list | length == 1
+      - microserver_jc42_before | selectattr('key', 'match', '^jc42-i2c-[0-9]+-1a$') | list | length == 1
+      - microserver_jc42_before | map(attribute='value.Adapter') | unique | list == ['SMBus PIIX4 adapter port 0 at 0b00']
+    fail_msg: Expected two JC42 sensors at addresses 18 and 1a on the qualified SMBus adapter.
+  vars:
+    microserver_jc42_before: "{{ (microserver_dimm_before.stdout | from_json) | dict2items | selectattr('key', 'match', '^jc42-i2c-[0-9]+-(18|1a)$') | list }}"
+
+- name: Inspect sensor configuration paths without following symlinks
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - {path: /etc/sensors.d, kind: directory}
+    - {path: /etc/sensors.d/90-microserver-jc42.conf, kind: file}
+  register: microserver_sensor_paths
+
+- name: Require protected sensor configuration paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$') and ((item.item.kind == 'directory' and item.stat.isdir | default(false)) or (item.item.kind == 'file' and item.stat.isreg | default(false))))
+    fail_msg: Refuse symlinked, untrusted or writable sensor configuration paths.
+  loop: '{{ microserver_sensor_paths.results }}'
+
+- name: Create the protected sensor configuration directory
+  ansible.builtin.file:
+    path: /etc/sensors.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install and parse the DIMM temperature policy before applying it
+  ansible.builtin.copy:
+    src: microserver-jc42.conf
+    dest: /etc/sensors.d/90-microserver-jc42.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/bin/sensors -c %s -j
+  register: microserver_sensor_policy
+
+- name: Enable boot initialization and apply changed sensor settings
+  ansible.builtin.systemd_service:
+    name: lm-sensors
+    enabled: true
+    state: "{{ 'restarted' if microserver_sensor_policy.changed else 'started' }}"
+  when: not ansible_check_mode
+
+- name: Read the effective DIMM limits and alarm flags
+  ansible.builtin.command:
+    argv: [/usr/bin/sensors, -c, /etc/sensors.d/90-microserver-jc42.conf, -j]
+  register: microserver_dimm_after
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require both DIMM sensors after applying the policy
+  ansible.builtin.assert:
+    that: [microserver_jc42_after | length == 2]
+  vars:
+    microserver_jc42_after: "{{ (microserver_dimm_after.stdout | from_json) | dict2items | selectattr('key', 'match', '^jc42-i2c-[0-9]+-(18|1a)$') | list }}"
+  when: not ansible_check_mode
+
+- name: Verify the applied limits and current DIMM temperature status
+  ansible.builtin.assert:
+    that:
+      - item.value.temp1.temp1_max == 75
+      - item.value.temp1.temp1_crit == 85
+      - item.value.temp1.temp1_crit_hyst == 82
+      - item.value.temp1.temp1_input < 75
+      - item.value.temp1.temp1_max_alarm == 0
+      - item.value.temp1.temp1_crit_alarm == 0
+    fail_msg: Review the effective limits and actual DIMM temperatures; do not raise limits to silence an alarm.
+  loop: "{{ (microserver_dimm_after.stdout | from_json) | dict2items | selectattr('key', 'match', '^jc42-i2c-[0-9]+-(18|1a)$') | list }}"
+  when: not ansible_check_mode

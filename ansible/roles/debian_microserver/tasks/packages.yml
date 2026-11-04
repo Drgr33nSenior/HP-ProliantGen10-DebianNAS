@@ -17,6 +17,7 @@
       - smartmontools
       - ethtool
       - pciutils
+      - dmidecode
       - lm-sensors
       - iperf3
       - nftables

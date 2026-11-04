@@ -10,6 +10,7 @@ storage/monitoring stack and these host tools:
 | Package | Purpose and initial policy |
 | --- | --- |
 | `lm-sensors` | Read supported temperature, voltage and fan sensors; no automatic sensor-bus probing |
+| `dmidecode` | Qualify DIMM models before enabling hardware-specific temperature limits |
 | `iperf3` | On-demand network testing; daemon selection is false and its unit is disabled/stopped |
 | `nftables` | Firewall tooling; no rules or service enablement changes |
 | `systemd-timesyncd` | Persistent clock sync; enabled/started during configure |
@@ -44,6 +45,41 @@ default policy regresses measured results, set
 configure. This stops/disables
 the daemon; it does not restore a previous IRQ mask. Reboot or restore separately
 recorded masks before comparing an unbalanced baseline.
+
+## DIMM temperature limits
+
+The installed Micron modules report part numbers `9ASF1G72AZ-2G3B1` (8 GB)
+and `18ASF2G72AZ-2G6D1` (16 GB). Their JC42 sensors on the SMBus PIIX4 port 0
+adapter initially reported maximum and critical limits of 0 C. The measured
+temperatures were about 30 C, with high/critical alarm flags set.
+
+Set `microserver_dimm_limits_enabled: true` in the private configuration to
+apply the qualified policy during `host`, `sensors` or full configure. It is
+disabled by default. The role requires this exact Micron DIMM pair and both
+sensor addresses, 18 and 1a, on the known adapter before changing settings.
+
+The local policy selects a 75 C warning, 85 C critical threshold and 3 C
+hysteresis (critical reset at 82 C). These are commissioning choices, not
+manufacturer-prescribed alarm settings. Micron's normal operating range ends
+at 85 C; the extended range requires increased refresh. See the manufacturer
+datasheets for the
+[8 GB module](https://www.mouser.com/datasheet/2/671/mict_s_a0011299042_1-2290813.pdf)
+and [16 GB module](https://www.mouser.com/datasheet/2/671/asf18c2gx72az-1284607.pdf).
+Module-sensor readings do not prove the hottest DRAM package temperature.
+
+[microserver-jc42.conf](../ansible/roles/debian_microserver/files/microserver-jc42.conf)
+binds the adapter by name, so I2C bus renumbering does not change the match.
+Debian's existing `lm-sensors.service` applies the configuration at boot. The
+role parses the file without writing hardware settings, then enables/restarts
+the service and verifies the effective limits and alarm flags. Failed readback
+stops qualification even if the vendor service ignored a command error.
+Do not raise limits further to clear a real high-temperature alarm.
+
+Check mode reads DIMM/sensor metadata but skips service activation and runtime
+qualification. Install the qualification tools before that check. Verify
+`sensors` and `systemctl is-enabled lm-sensors` after a later reboot. Requalify
+the policy if modules or the sensor adapter change. The profile does not
+change CPU thermal limits, hide sensor readings or run `sensors-detect`.
 
 ## Performance mode
 
