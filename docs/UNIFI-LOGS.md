@@ -44,7 +44,9 @@ This is useful home monitoring with bounded storage, not a lossless audit archiv
 Start with security, system and Internet/outage events. Add client events after
 measuring volume; per-flow traffic export needs a separate capacity review.
 
-Loki indexes only the bounded `job`, `product` and `severity` labels. Client
+Vector supplies only the bounded `job`, `product` and `severity` labels. Loki
+can add a bounded `service_name` label and detected log-level structured metadata.
+Client
 addresses, MAC addresses, usernames, event IDs and messages stay in the record
 body. Grafana can inspect them at query time without creating a stream for each
 client or event. Log records can contain private activity; retain them within

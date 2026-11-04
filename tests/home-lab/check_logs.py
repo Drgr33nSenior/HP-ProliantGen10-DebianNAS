@@ -163,8 +163,14 @@ class LogPipelineTests(unittest.TestCase):
                     self.assertEqual({entry['message'] for entry in entries}, set(messages))
                     self.assertEqual(sum(entry['cef_parsed'] for entry in entries), 2)
                     self.assertEqual({entry['severity'] for entry in entries}, {'3', '5', 'unknown'})
-                    for stream in result['data']['result']:
-                        self.assertLessEqual(set(stream['stream']), {'job', 'product', 'severity', 'service_name'})
+                    # Log queries also expose structured metadata such as detected_level.
+                    # Inspect the series API to check only indexed stream labels.
+                    params = urllib.parse.urlencode({'match[]': '{job="unifi"}',
+                                                     'start': start, 'end': time.time_ns()})
+                    series = json.loads(response(f'http://127.0.0.1:{http_port}/loki/api/v1/series?' + params))
+                    self.assertEqual(len(series['data']), 3)
+                    for labels in series['data']:
+                        self.assertLessEqual(set(labels), {'job', 'product', 'severity', 'service_name'})
                     dashboard = json.loads((ROLE / 'files/unifi-logs-dashboard.json').read_text())
                     for panel in dashboard['panels']:
                         for target in panel['targets']:
