@@ -69,7 +69,7 @@ class MicroServerTests(unittest.TestCase):
         self.assertEqual(entries['hw-detect/load_firmware'], 'true')
         self.assertEqual(entries['apt-setup/non-free-firmware'], 'true')
         packages = set(entries['pkgsel/include'].split())
-        self.assertTrue({'amd64-microcode', 'firmware-misc-nonfree', 'openssh-server', 'sudo', 'python3-apt', 'apparmor'} <= packages)
+        self.assertTrue({'amd64-microcode', 'firmware-misc-nonfree', 'openssh-server', 'sudo', 'python3-apt', 'apparmor', 'ethtool', 'pciutils'} <= packages)
         self.assertFalse({'k3s', 'kubelet', 'task-desktop', 'xorg', 'gnome', 'kde-plasma-desktop', 'docker.io'} & packages)
         for name in ['grub-entry.cfg', 'isolinux-entry.cfg']:
             boot = (ROOT / 'installer/media' / name).read_text()
@@ -77,7 +77,7 @@ class MicroServerTests(unittest.TestCase):
             self.assertNotIn('/gtk/', boot)
         apt = read_yaml(ROLE / 'tasks/packages.yml')[0]['ansible.builtin.apt']
         self.assertFalse(apt['install_recommends'])
-        self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree'} <= set(apt['name']))
+        self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree', 'ethtool', 'pciutils'} <= set(apt['name']))
 
     def test_target_boundary(self):
         task = read_yaml(ROOT / 'ansible/microserver.yml')[0]['pre_tasks'][0]

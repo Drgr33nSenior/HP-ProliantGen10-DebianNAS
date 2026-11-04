@@ -8,6 +8,8 @@
       - zfsutils-linux
       - nfs-kernel-server
       - smartmontools
+      - ethtool
+      - pciutils
       - amd64-microcode
       - firmware-misc-nonfree
       - apparmor

@@ -16,7 +16,7 @@ physical installation, recovery, NFS access or monitoring performance.
 | RAM | 24 GB; retain headroom for the OS and ZFS cache |
 | OS storage | 256 GB SSD: Debian, container images and active monitoring databases |
 | Bulk storage | Four new 2 TB Seagate IronWolf HDDs; supplied model ST2000VN004; verify each drive |
-| Network | 10GbE card in the electrically x8 slot; dedicated GPU removed |
+| Network | Binardat RJ45 card, owner-reported Aquantia AQC107; in the electrically x8 slot; dedicated GPU removed |
 | Pool | Owner-created four-disk RAIDZ2, about 4 TB / 3.64 TiB before filesystem overhead and free-space reserve |
 
 The [Seagate datasheet](https://www.seagate.com/content/dam/seagate/en/content-fragments/products/datasheets/ironwolf-12tb/ironwolf-DS1904-22-2404US-en_US.pdf)
@@ -24,6 +24,9 @@ lists ST2000VN004 as a 2 TB, CMR, 5900 RPM NAS drive. Keep actual serials,
 disk IDs, SSH identities and addresses in a private install journal outside Git.
 The owner supplied four HDD serials; their device-reported identities and bay
 mapping remain to be verified on the physical server.
+The AQC107 uses Debian's `atlantic` kernel driver. The pinned installer includes
+the module; actual card identity, firmware and link speed need first-boot checks.
+See the [NIC verification procedure](docs/INSTALL-MEDIA.md#verify-the-aqc107-network-card).
 
 Keep active models, coding workspaces and active Graphiti/database storage on
 workstation SSDs. Use NFS for documents, datasets, model archives and backups.
@@ -92,6 +95,9 @@ Recommended packages are disabled. AMD microcode, onboard Broadcom firmware,
 AppArmor and the ZFS event daemon are explicit dependencies. The custom install
 profile selects no desktop task or standard task bundle; only its small explicit
 base package list and installer-detected firmware are added.
+Small diagnostic utilities `ethtool` and `pciutils` support NIC/PCI checks without
+adding a background service. No separate AQC107 driver or firmware download is
+required for a card with working onboard firmware.
 
 ## 3. Create and record the data pool locally
 

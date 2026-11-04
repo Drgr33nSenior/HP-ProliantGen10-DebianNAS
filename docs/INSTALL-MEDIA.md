@@ -92,8 +92,7 @@ The base has no desktop or selected task bundles. It explicitly includes SSH,
 sudo, Python for remote Ansible, CA certificates, AppArmor, AMD microcode and
 `firmware-misc-nonfree` for the onboard Broadcom/tg3 firmware. Official installer
 firmware lookup remains enabled, with Debian `contrib` and `non-free-firmware`
-repositories. The Marvell SATA path uses the kernel driver. Check the 10GbE
-card's exact model/PCI ID before claiming its driver and firmware are qualified.
+repositories. The Marvell SATA path uses the kernel driver.
 See [Debian's tg3 firmware package](https://packages.debian.org/trixie/all/firmware-misc-nonfree/filelist).
 
 HPE system-ROM and NIC/controller flash updates are separate owner procedures.
@@ -103,3 +102,42 @@ unknown hardware or change firmware trust settings.
 Grafana, Prometheus and Alertmanager use Docker Compose on Debian under systemd;
 the node exporter, NFS and ZFS run on the host. No Kubernetes node, virtual
 machine, AI workload, embedding model or graph database is installed.
+
+## Verify the AQC107 network card
+
+The owner reports a Binardat RJ45 card with an Aquantia AQC107 controller.
+Linux supports this controller through the in-tree `atlantic` driver; see the
+[kernel driver documentation](https://docs.kernel.org/networking/device_drivers/ethernet/aquantia/atlantic.html).
+The pinned Debian 13.7.0 image includes `atlantic.ko.xz` in both its installer
+NIC package and its installed-kernel package. No vendor driver build is needed.
+
+The AQC107 normally boots firmware from the card's onboard flash. This profile
+does not need a separate AQC107 firmware file for a card with working factory
+firmware. Linux 6.12's [firmware startup code](https://raw.githubusercontent.com/torvalds/linux/v6.12/drivers/net/ethernet/aquantia/atlantic/hw_atl/hw_atl_utils.c)
+rejects a missing-firmware state rather than downloading a replacement. This
+differs from the onboard Broadcom's Debian firmware files. If startup reports
+missing or unsupported firmware, use the onboard NIC for installation and
+investigate the exact card revision with its supplier before any flash update.
+
+The minimal package list includes `ethtool` and `pciutils` for these read-only
+checks. After installation, identify the actual interface with `ip -br link` and
+replace `enpXsY` below with its name:
+
+```sh
+lspci -nnk -d 1d6a:
+nic=enpXsY
+ethtool -i "$nic"
+ethtool "$nic"
+ip link show dev "$nic"
+```
+
+Record the PCI ID, `Kernel driver in use: atlantic`, firmware version and link
+status privately. A connected 10GbE switch port and suitable cable should show
+`Speed: 10000Mb/s`, `Duplex: Full` and `Link detected: yes`. A lower negotiated
+speed does not by itself show a driver failure; check the switch port and cable.
+Leave auto-negotiation, MTU 1500 and driver offload/interrupt defaults in place
+for the first test. Measure throughput and CPU use before tuning. PXE is
+optional; this procedure boots from USB and then the SSD.
+
+Module availability establishes software support, not physical qualification
+of this Binardat board, its firmware, negotiated PCIe link or 10GbE throughput.
