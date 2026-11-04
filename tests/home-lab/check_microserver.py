@@ -470,8 +470,10 @@ class MicroServerTests(unittest.TestCase):
         policy = job['metric_relabel_configs'][0]
         self.assertEqual(policy['action'], 'keep')
         self.assertIsNotNone(re.fullmatch(policy['regex'], 'unifipoller_device_wan_receive_bytes_total'))
-        self.assertIsNone(re.fullmatch(policy['regex'], 'unifipoller_client_receive_bytes_total'))
-        self.assertIsNone(re.fullmatch(policy['regex'], 'unifipoller_device_info'))
+        self.assertIsNotNone(re.fullmatch(policy['regex'], 'unifipoller_client_receive_bytes_total'))
+        self.assertIsNotNone(re.fullmatch(policy['regex'], 'unifipoller_device_info'))
+        self.assertIsNone(re.fullmatch(policy['regex'], 'unifipoller_dpi_application_present'))
+        self.assertIsNone(re.fullmatch(policy['regex'], 'unifipoller_firewall_rule_enabled'))
         default = yaml.safe_load(ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(**self.context))
         self.assertNotIn('unpoller', default['services'])
         stop = next(task for task in self.monitoring if task['name'].startswith('Stop the optional collector'))

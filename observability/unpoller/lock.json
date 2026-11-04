@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/unpoller/dashboards",
+  "commit": "adbe342f09d0fe06b1cc152d28ab0bae5ee3d8b9",
+  "license": "MIT",
+  "license_file": "third-party-licenses/UnPoller-dashboards-MIT.txt",
+  "dashboards": [
+    {
+      "name": "sites",
+      "upstream_path": "v2.0.0/UniFi-Poller_ Network Sites - Prometheus.json",
+      "git_blob_sha1": "0094cf1df592bb8edc5059d4fdf1a7453a038ba9",
+      "sha256": "75194203c551fb400f40b0c7c73df18ec2ea18fbb5d634735a8b03abdd2eb72b",
+      "uid": "9WaGWZaZk",
+      "grafana_id": 11311
+    },
+    {
+      "name": "gateway",
+      "upstream_path": "v2.0.0/UniFi-Poller_ USG Insights - Prometheus.json",
+      "git_blob_sha1": "9e740a537e22867baee3032d7e6caf16f5483514",
+      "sha256": "84f65ea6f01b61399031416d4e517ce51f23bca966aaca6a08bbe0ee29eae319",
+      "uid": "4Yo8IZ-Wk",
+      "grafana_id": 11313
+    },
+    {
+      "name": "access-points",
+      "upstream_path": "v2.0.0/UniFi-Poller_ UAP Insights - Prometheus.json",
+      "git_blob_sha1": "1283eb0eb14ea358070c0fe7d07ab4ac4dc014c2",
+      "sha256": "482c26f2be09b11858c9cb26ca081cac007d7b29545a5bc3033abc2a1aeba581",
+      "uid": "g5wFWqxZk",
+      "grafana_id": 11314
+    },
+    {
+      "name": "clients",
+      "upstream_path": "v2.0.0/UniFi-Poller_ Client Insights - Prometheus.json",
+      "git_blob_sha1": "fc8a08692a269b52ad07f11f3d616467068a08bf",
+      "sha256": "4dbbe6d0023299cd9c2a46a6fa8bdceca431654e4947866ba2f72de9121eed46",
+      "uid": "jMfvAjxWz",
+      "grafana_id": 11315
+    }
+  ]
+}

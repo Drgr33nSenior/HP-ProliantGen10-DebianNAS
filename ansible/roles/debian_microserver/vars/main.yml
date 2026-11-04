@@ -7,3 +7,5 @@ microserver_alertmanager_image: "{{ (microserver_observability_lock.images | sel
 microserver_loki_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'loki') | first).image }}"
 microserver_vector_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'vector') | first).image }}"
 microserver_unpoller_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'unpoller') | first).image }}"
+microserver_unifi_insights: "{{ lookup('ansible.builtin.file', playbook_dir + '/../observability/unpoller/lock.json') | from_json }}"
+microserver_unifi_metrics: "{{ lookup('ansible.builtin.file', playbook_dir + '/../observability/unpoller/metrics.json') | from_json }}"

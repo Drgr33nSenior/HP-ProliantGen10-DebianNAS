@@ -15,3 +15,10 @@ No code from that project is incorporated here.
 The guarded macOS USB writer and its safety fixtures were adapted from the
 workstation project's infrastructure/iso/usb.sh and tests/test_iso_usb.sh.
 The original MIT notice above also applies to these adapted files.
+
+The four UnPoller Insights dashboards are adapted from unpoller/dashboards,
+commit adbe342f09d0fe06b1cc152d28ab0bae5ee3d8b9. Original files and hashes are
+retained under observability/unpoller; generated files bind the existing
+datasource and metric namespace and adapt selected panels for this deployment.
+The upstream MIT notice is retained in
+third-party-licenses/UnPoller-dashboards-MIT.txt.

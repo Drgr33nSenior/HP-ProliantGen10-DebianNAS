@@ -21,6 +21,8 @@ shfmt -d -i 2 -ci "${scripts[@]}"
 ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ansible/microserver.yml
 ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ansible/owner-install.yml
 bash tests/test_microserver.sh
+"$MICROSERVER_PYTHON" observability/unpoller/render.py --check
+"$MICROSERVER_PYTHON" tests/home-lab/check_unpoller_dashboards.py
 "$MICROSERVER_PYTHON" tests/home-lab/check_logs.py
 bash tests/test_media.sh
 bash tests/test_usb.sh

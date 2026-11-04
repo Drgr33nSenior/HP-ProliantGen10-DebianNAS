@@ -299,6 +299,10 @@ Grafana separates network dashboards into a **Network** folder alongside
 errors and drops, plus WAN/device performance when UnPoller is enabled.
 **UniFi events** provides the gateway logs. Existing dashboard UIDs and URLs
 are preserved. See [network dashboard and collector setup](docs/NETWORK-MONITORING.md).
+The Network folder also includes the pinned upstream UnPoller **Network Sites**,
+**USG Insights**, **UAP Insights** and **Client Insights** dashboards. Their exact
+metric families, including client performance history, are retained in
+Prometheus; DPI collection remains disabled.
 
 Before LAN telemetry cutover, review actual addresses, TLS/authentication and
 firewall scope, then qualify Alloy forwarding, node labels and workstation

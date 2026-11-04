@@ -2,7 +2,8 @@
 
 Grafana has sibling **Infrastructure** and **Network** folders. Infrastructure
 contains the host, storage, workload and monitoring dashboards. Network contains
-**Network overview** and **UniFi events**.
+**Network overview**, **UniFi events** and the four upstream UnPoller Insights
+dashboards: Network Sites, USG (gateway), UAP (access points) and Client Insights.
 
 The overview shows WAN download/upload, latency and status, device CPU, memory,
 temperature and uptime, and NAS interface speed, traffic, errors and drops.
@@ -29,12 +30,59 @@ container uses a non-root UID, a read-only root, dropped capabilities, a 256 MiB
 memory ceiling and 0.1 CPU. With polling enabled, all six container ceilings
 total 5.75 GiB and 1.5 CPUs. These are ceilings, not reservations.
 
-Prometheus stores only the controller-health, cache-age, device-health and WAN
-series used by the overview. Per-client and DPI series are excluded. UnPoller
-still fetches its normal client data from the controller; the metric filter
+Prometheus stores the exact metric families used by the overview and the four
+Insights dashboards, plus collector-health measurements. This includes client
+names, MAC/vendor labels and client performance history used by the client/AP
+dashboards. These remain within the existing authenticated Grafana and private
+Prometheus access boundary and its 14-day/24-GB retention policy. Unrelated
+firewall, country-catalog and DPI families are excluded. The metric filter
 reduces stored data, not all API work. DPI, traffic detail, device-tag lookups,
 extra event polling and Protect collection are disabled. Loki keeps receiving
 events through Vector independently of performance polling.
+
+### Upstream Insights dashboards
+
+The profile provisions these Prometheus dashboards in **Network**:
+
+| Dashboard | Upstream Grafana ID | Purpose |
+| --- | --- | --- |
+| UniFi-Poller: Network Sites | 11311 | Device/client counts, site traffic and uplink health |
+| UniFi-Poller: USG Insights | 11313 | Gateway details, WAN traffic, packets and errors |
+| UniFi-Poller: UAP Insights | 11314 | AP performance, radios, channels and Wi-Fi quality |
+| UniFi-Poller: Client Insights | 11315 | Wired/wireless client traffic, signal and roaming |
+
+See [UnPoller's dashboard catalog](https://unpoller.com/docs/install/grafana/).
+The reviewed source is commit `adbe342f09d0fe06b1cc152d28ab0bae5ee3d8b9` of
+[unpoller/dashboards](https://github.com/unpoller/dashboards/tree/adbe342f09d0fe06b1cc152d28ab0bae5ee3d8b9).
+Original files, upstream Git blob IDs, SHA-256 hashes and UIDs are recorded in
+`observability/unpoller/lock.json`. The original MIT notice is retained.
+
+Generated deployment copies use the existing Prometheus datasource and
+`unifipoller_` namespace. They keep the upstream UIDs and layouts, use a
+one-minute refresh and a five-minute minimum rate window. The AP clock becomes
+a collection-age stat, its remaining legacy graph becomes a native time-series
+panel, and the Sites DPI-only chart is omitted. All panels use bundled Grafana
+components. A separate switch or cellular dashboard can be added when that
+hardware is present.
+
+UnPoller can expose measurements that the controller does not supply for every
+device. For example, the commissioned Cloud Gateway Fiber currently exposes
+WAN metrics but no `device_lan_*` families, so the upstream gateway LAN charts
+can remain empty. VPN and particular client-category charts can also be empty
+when unused. Missing optional measurements are not synthesized as zero.
+
+To update the dashboards, review a new upstream commit and update the original
+files and hashes first. With the configured Python 3.11+ environment, regenerate
+the deployment copies and derived metric allowlist, then run the source checks:
+
+```bash
+"$MICROSERVER_PYTHON" observability/unpoller/render.py
+make check
+```
+
+Keep changes in the renderer or original reviewed sources; do not edit generated
+JSON directly. Generation uses the local pinned files. Deployment copies those
+files without downloading dashboards or plugins on the NAS.
 
 ### Authentication and TLS prerequisites
 
@@ -126,11 +174,15 @@ removes its scrape target. It preserves the credential and existing data.
 4. Check WAN rates after several polling intervals. Confirm CPU/memory ratios
    display as percentages, WAN byte counters as bits per second and latency as
    a duration. Compare device readings with UniFi.
-5. Confirm no per-client/DPI series are stored, no polling error/staleness alert
-   is active, and actual CPU/RAM use remains acceptable. Retest after a planned
-   reboot and verify a real UniFi event remains searchable.
+5. Open the four Insights dashboards. Confirm the site/device/client selectors
+   populate and data appears after several one-minute scrapes. Check the
+   selected metric families and actual CPU/RAM use. DPI/unrelated catalog metrics
+   must stay excluded and no polling error/staleness alert should be active.
+   Retest after a planned reboot and verify a real UniFi event remains searchable.
 
 The source suite renders both enabled and disabled profiles, checks credential
 metadata/TLS boundaries and folder paths, and executes every overview PromQL
-query against synthetic data. Gateway API/firmware compatibility and live
-readings require owner credentials and hardware qualification.
+query against synthetic data. It also verifies the immutable upstream files,
+generated output, native panel types, metric-family coverage and native PromQL
+syntax for the Insights panel and variable queries. Gateway API/firmware
+compatibility and actual rendered dashboards still need live qualification.

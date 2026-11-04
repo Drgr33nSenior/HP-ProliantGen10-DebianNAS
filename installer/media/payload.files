@@ -9,6 +9,7 @@ docs/NETWORK-MONITORING.md
 LICENSE
 NOTICE
 third-party-licenses/ArchLinuxThreadripper-MIT.txt
+third-party-licenses/UnPoller-dashboards-MIT.txt
 ansible.cfg
 ansible/microserver.yml
 ansible/owner-install.yml
@@ -45,6 +46,17 @@ observability/versions.json
 observability/config/datasources.metrics.yaml
 observability/config/datasources.logs.yaml
 observability/config/dashboards.yaml
+observability/unpoller/lock.json
+observability/unpoller/metrics.json
+observability/unpoller/render.py
+observability/unpoller/upstream/sites.json
+observability/unpoller/upstream/gateway.json
+observability/unpoller/upstream/access-points.json
+observability/unpoller/upstream/clients.json
+observability/unpoller/generated/sites.json
+observability/unpoller/generated/gateway.json
+observability/unpoller/generated/access-points.json
+observability/unpoller/generated/clients.json
 observability/dashboards/gpus.json
 observability/dashboards/host.json
 observability/dashboards/kubernetes.json

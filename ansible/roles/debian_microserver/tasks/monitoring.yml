@@ -180,6 +180,16 @@
     mode: '0644'
   notify: Reload MicroServer monitoring
 
+- name: Provision the pinned upstream UnPoller Insights dashboards
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/unpoller/generated/{{ item.name }}.json'
+    dest: '/etc/microserver/monitoring/dashboard-folders/Network/unpoller-{{ item.name }}.json'
+    owner: root
+    group: root
+    mode: '0644'
+  loop: '{{ microserver_unifi_insights.dashboards }}'
+  notify: Reload MicroServer monitoring
+
 - name: Require explicit HTTPS controller settings for performance polling
   ansible.builtin.assert:
     that:
