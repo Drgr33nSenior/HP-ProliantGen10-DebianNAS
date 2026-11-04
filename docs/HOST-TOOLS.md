@@ -20,6 +20,12 @@ storage/monitoring stack and these host tools:
 | `powertop` | Inspect wakeups and power tunables; its auto-tuning unit is disabled/stopped |
 | `firmware-amd-graphics` | Support the onboard AMD display without a desktop environment |
 
+The container packages explicitly include `docker-cli` as well as `docker.io`
+and `docker-compose`. Debian lists the client as a
+[recommended package](https://packages.debian.org/trixie/docker.io), so the
+minimal install must select it explicitly for owner diagnostics. It adds no
+resident service or container build tooling.
+
 The package transaction suppresses service starts. It then explicitly keeps
 the benchmark and PowerTOP units inactive. Configure starts the selected host
 services after the existing storage guards; monitoring activation remains a

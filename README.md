@@ -111,7 +111,7 @@ ANSIBLE_HOST_KEY_CHECKING=True ansible-playbook \
 ```
 
 This explicit bootstrap stage installs Debian ZFS/DKMS, headers, NFS,
-SMART tools, Docker/Compose and the native node exporter. Package service starts
+SMART tools, Docker Engine/CLI, Compose and the native node exporter. Package service starts
 are suppressed during the apt transaction; complete configuration before reboot.
 Matching headers for the running Debian kernel must be available. If they are
 unavailable, update and boot the supported Debian kernel before retrying bootstrap.

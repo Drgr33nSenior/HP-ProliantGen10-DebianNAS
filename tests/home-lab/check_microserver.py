@@ -84,6 +84,7 @@ class MicroServerTests(unittest.TestCase):
         apt = next(task['ansible.builtin.apt'] for task in package_tasks if 'ansible.builtin.apt' in task)
         self.assertFalse(apt['install_recommends'])
         self.assertEqual(apt['policy_rc_d'], 101)
+        self.assertTrue({'docker.io', 'docker-cli', 'docker-compose'} <= set(apt['name']))
         self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree', 'firmware-amd-graphics', 'ethtool', 'pciutils', 'lm-sensors', 'iperf3', 'nftables', 'systemd-timesyncd', 'irqbalance', 'linux-cpupower', 'powertop', 'tuned'} <= set(apt['name']))
 
     def test_iommu_workaround_is_in_installer_and_persistent_boot_options(self):
@@ -333,6 +334,14 @@ class MicroServerTests(unittest.TestCase):
             self.assertLessEqual(service['cpus'], 1)
             self.assertEqual(service['logging']['options']['max-size'], '10m')
             self.assertFalse(any('docker.sock' in value for value in service['volumes']))
+            for mount in service.get('tmpfs', []):
+                self.assertTrue(mount.split(':', 1)[0].startswith('/'), mount)
+        grafana_tmpfs = config['services']['grafana']['tmpfs']
+        self.assertEqual(len(grafana_tmpfs), 1)
+        target, options = grafana_tmpfs[0].split(':', 1)
+        self.assertEqual(target, '/tmp')
+        self.assertEqual(dict(option.split('=', 1) for option in options.split(',')),
+                         dict(size='64m', mode='1777'))
         for name in ['prometheus', 'grafana', 'alertmanager']:
             self.assertEqual(config['services'][name]['image'], self.context[f'microserver_{name}_image'])
         self.assertIn('--web.listen-address=127.0.0.1:9090', config['services']['prometheus']['command'])

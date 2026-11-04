@@ -46,7 +46,7 @@ services:
       - /etc/microserver/monitoring/provisioning:/etc/grafana/provisioning:ro
       - /etc/microserver/monitoring/dashboards:/var/lib/grafana/dashboards:ro
       - /var/lib/microserver/grafana:/var/lib/grafana
-    tmpfs: [/tmp:size=64m,mode=1777]
+    tmpfs: ['/tmp:size=64m,mode=1777']
     mem_limit: 512m
     memswap_limit: 512m
     cpus: 0.5

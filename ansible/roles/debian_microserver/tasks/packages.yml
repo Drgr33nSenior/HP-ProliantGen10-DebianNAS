@@ -32,6 +32,7 @@
       - apparmor
       - zfs-zed
       - docker.io
+      - docker-cli
       - docker-compose
       - prometheus-node-exporter
     state: present
