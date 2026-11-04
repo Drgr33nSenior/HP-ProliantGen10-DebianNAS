@@ -183,6 +183,7 @@ class MicroServerTests(unittest.TestCase):
     def test_compose_security_and_canonical_images(self):
         compose = ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(**self.context)
         config = yaml.safe_load(compose)
+        self.assertLessEqual(sum(service['cpus'] for service in config['services'].values()), 1.1)
         for service in config['services'].values():
             self.assertRegex(service['image'], r'@sha256:[a-f0-9]{64}$')
             self.assertTrue(service['read_only'])
@@ -200,6 +201,7 @@ class MicroServerTests(unittest.TestCase):
         for name in ['prometheus', 'grafana', 'alertmanager']:
             self.assertEqual(config['services'][name]['image'], self.context[f'microserver_{name}_image'])
         self.assertIn('--web.listen-address=127.0.0.1:9090', config['services']['prometheus']['command'])
+        self.assertIn('--query.max-concurrency=2', config['services']['prometheus']['command'])
         self.assertIn('--web.listen-address=127.0.0.1:9093', config['services']['alertmanager']['command'])
         self.assertEqual(config['services']['grafana']['environment']['GF_SERVER_HTTP_ADDR'], '127.0.0.1')
         if len(sys.argv) > 1:

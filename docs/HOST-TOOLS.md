@@ -31,7 +31,7 @@ guarantee that every fan or motherboard sensor is exposed by this board.
 
 ## Interrupt balancing
 
-`irqbalance` is a reasonable initial policy for this four-core storage/10GbE
+`irqbalance` is a reasonable initial policy for this dual-core X3216 storage/10GbE
 host. It distributes eligible hardware interrupts across processors; it does
 not guarantee higher throughput for every driver or workload. The profile
 does not also assign manual IRQ masks or isolate CPUs.

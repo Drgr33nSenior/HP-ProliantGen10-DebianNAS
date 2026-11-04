@@ -12,7 +12,7 @@ services:
       - --storage.tsdb.retention.size=24GB
       - --web.listen-address=127.0.0.1:9090
       - --web.enable-remote-write-receiver
-      - --query.max-concurrency=4
+      - --query.max-concurrency=2
       - --query.timeout=30s
     environment: {GOMEMLIMIT: 1228MiB}
     volumes:
@@ -21,7 +21,7 @@ services:
       - /var/lib/microserver/prometheus:/prometheus
     mem_limit: 1536m
     memswap_limit: 1536m
-    cpus: 1.0
+    cpus: 0.5
     pids_limit: 256
     read_only: true
     cap_drop: [ALL]
@@ -72,7 +72,7 @@ services:
       - /var/lib/microserver/alertmanager:/alertmanager
     mem_limit: 256m
     memswap_limit: 256m
-    cpus: 0.25
+    cpus: 0.1
     pids_limit: 128
     read_only: true
     cap_drop: [ALL]

@@ -12,12 +12,12 @@ physical installation, recovery, NFS access or monitoring performance.
 
 | Item | Owner-reported configuration and intended use |
 | --- | --- |
-| Platform | Original MicroServer Gen10, four-core Opteron X3418 or X3421; exact variant/speed remains to be discovered |
+| Platform | Original MicroServer Gen10; owner-confirmed dual-core Opteron X3216 (1.6–3.0 GHz) |
 | RAM | 24 GB; retain headroom for the OS and ZFS cache |
-| OS storage | 256 GB SSD: Debian, container images and active monitoring databases |
-| Bulk storage | Four new 2 TB Seagate IronWolf HDDs; supplied model ST2000VN004; verify each drive |
+| OS storage | SanDisk SSD PLUS 240 GB (223.6 GiB reported): Debian, container images and active monitoring databases |
+| Bulk storage | Four 2 TB Seagate IronWolf ST2000VN004 HDDs; existing `virt` LVM data awaits owner review |
 | Network | Binardat RJ45 card, owner-reported Aquantia AQC107; in the electrically x8 slot; dedicated GPU removed |
-| Pool | Owner-created four-disk RAIDZ2, about 4 TB / 3.64 TiB before filesystem overhead and free-space reserve |
+| Pool | Planned owner-created four-disk RAIDZ2, about 4 TB / 3.64 TiB before filesystem overhead and free-space reserve |
 
 The [Seagate datasheet](https://www.seagate.com/content/dam/seagate/en/content-fragments/products/datasheets/ironwolf-12tb/ironwolf-DS1904-22-2404US-en_US.pdf)
 lists ST2000VN004 as a 2 TB, CMR, 5900 RPM NAS drive. Keep actual serials,
@@ -53,13 +53,20 @@ Cluster-specific workstation absence/GPU rules are not reused as NAS health rule
 
 Prepare the reviewed image with the [USB builder](docs/INSTALL-MEDIA.md), or use
 verified official [Debian 13 AMD64 installation media](https://www.debian.org/releases/trixie/).
-Identify the 256 GB SSD by model, serial and capacity. Disconnect the four HDDs
+Identify the SanDisk 240 GB SSD by model, serial and capacity. Disconnect the four HDDs
 during OS installation where practical. Install a minimal system with ext4 on
 the SSD, SSH and a named administrator; a desktop and ZFS root are unnecessary.
 Do not select the HDDs for OS partitioning or LVM.
 Use the custom MicroServer boot entry, which includes the owner-required
 `iommu=pt` SATA workaround for installation and the installed GRUB configuration.
 Verify it in `/proc/cmdline` after the first SSD boot and check disk visibility.
+
+The first installed system used guided LVM with a 6.18 GiB `/var` and a
+184.30 GiB `/home`. Expand `/var` before container bootstrap; Docker and the
+configured monitoring retention do not fit that layout. The bounded
+[SSD LVM adjustment](docs/SSD-LVM.md) preserves the existing OS and the separate
+`virt` data volume group. Existing VM volumes require owner review before ZFS
+pool creation; an LVM signature is not evidence of a blank disk.
 
 Use Debian's kernel and signed package repositories. Enable Debian `contrib`
 for ZFS, with matching kernel headers; follow the
@@ -192,6 +199,10 @@ endpoints. Runtime containers use non-root UIDs, dropped capabilities, read-only
 roots, bounded memory/CPU/PIDs, bounded Docker logs and immutable images.
 The three container memory limits total 2304 MiB, excluding Docker, the native
 exporter, OS and ZFS cache; actual usage remains to be measured.
+Initial CPU ceilings for the dual-core X3216 are 0.5 CPU for Prometheus,
+0.5 for Grafana and 0.1 for Alertmanager, totaling 1.1 CPUs. These ceilings
+are not reservations or a measured performance guarantee. Prometheus query
+concurrency starts at two; qualify ingestion and dashboard latency on hardware.
 The exporter includes available hardware temperature/fan readings and network
 interface counters through its hwmon, netdev and netclass collectors. Sensor
 availability still depends on the actual hardware and kernel driver.

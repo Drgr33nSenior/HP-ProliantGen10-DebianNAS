@@ -83,7 +83,7 @@ installation media. USB readback does not establish a successful physical boot.
 
 1. Boot the MicroServer and select **MicroServer minimal install**. The Debian
    recovery and standard installer entries remain available.
-2. Confirm the 256 GB SSD using its actual identity. Select its partitioning
+2. Confirm the SanDisk 240 GB SSD using its actual identity. Select its partitioning
    interactively; the preseed has no disk selector or partition confirmations.
 3. Create the named administrator and password locally. Root login is disabled;
    no passwords are present on the USB.
@@ -96,6 +96,11 @@ installation media. USB readback does not establish a successful physical boot.
    APT policy. It does not run Ansible, create/import a pool or start monitoring.
 6. Follow the [NAS setup procedure](../README.md#2-prepare-the-private-target-configuration)
    with discovered hardware, verified SSH identity and private configuration.
+
+If guided partitioning assigns most SSD capacity to `/home` and only about
+6 GiB to `/var`, correct the allocation before installing the service stack.
+Use the reviewed [SSD LVM adjustment](SSD-LVM.md) for the recorded installed
+layout. Keep any existing data-disk volumes until their disposition is confirmed.
 
 The base has no desktop or selected task bundles. It explicitly includes SSH,
 sudo, Python for remote Ansible, CA certificates, AppArmor, persistent time sync,
