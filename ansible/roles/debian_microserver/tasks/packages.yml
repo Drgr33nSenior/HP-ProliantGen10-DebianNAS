@@ -8,10 +8,15 @@
       - zfsutils-linux
       - nfs-kernel-server
       - smartmontools
+      - amd64-microcode
+      - firmware-misc-nonfree
+      - apparmor
+      - zfs-zed
       - docker.io
       - docker-compose
       - prometheus-node-exporter
     state: present
+    install_recommends: false
     update_cache: true
     cache_valid_time: 3600
     policy_rc_d: 101

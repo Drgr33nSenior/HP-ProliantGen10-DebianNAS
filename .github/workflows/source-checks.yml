@@ -1,10 +1,18 @@
 name: Source checks
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_media:
+        description: Build and inspect the pinned real Debian installer ISO
+        type: boolean
+        default: false
 permissions: {contents: read}
 jobs:
   source:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with: {persist-credentials: false}
@@ -20,3 +28,10 @@ jobs:
           echo "MICROSERVER_PYTHON=$RUNNER_TEMP/microserver-validation/bin/python" >> "$GITHUB_ENV"
       - name: Validate source without host or container execution
         run: make check
+      - name: Build real installer media without USB access
+        if: github.event_name == 'workflow_dispatch' && inputs.build_media
+        run: |
+          bash installer/media/media.sh fetch "$RUNNER_TEMP/debian-source"
+          bash installer/media/media.sh build "$RUNNER_TEMP/debian-source" "$RUNNER_TEMP/microserver-media"
+          cat "$RUNNER_TEMP/microserver-media/SHA256SUMS"
+          cat "$RUNNER_TEMP/microserver-media/boot-layout.log"

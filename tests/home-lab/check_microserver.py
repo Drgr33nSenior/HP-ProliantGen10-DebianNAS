@@ -53,6 +53,32 @@ class MicroServerTests(unittest.TestCase):
         for key, value in read_yaml(ROLE / 'vars/main.yml').items():
             self.context[key] = ENV.from_string(value).render(**self.context)
 
+    def test_lightweight_install_keeps_owner_disk_and_account_choices(self):
+        entries = {}
+        for line in (ROOT / 'installer/media/preseed.cfg').read_text().splitlines():
+            if not line.strip() or line.startswith('#'):
+                continue
+            owner, key, kind, *value = line.split(None, 3)
+            self.assertIn(owner, ['d-i', 'tasksel', 'popularity-contest'])
+            entries[key] = value[0] if value else ''
+        self.assertFalse(any(key.startswith(('partman', 'grub-installer')) for key in entries))
+        self.assertFalse(any('password' in key for key in entries))
+        self.assertNotIn('preseed/early_command', entries)
+        self.assertEqual(entries['tasksel/first'], '')
+        self.assertEqual(entries['base-installer/install-recommends'], 'false')
+        self.assertEqual(entries['hw-detect/load_firmware'], 'true')
+        self.assertEqual(entries['apt-setup/non-free-firmware'], 'true')
+        packages = set(entries['pkgsel/include'].split())
+        self.assertTrue({'amd64-microcode', 'firmware-misc-nonfree', 'openssh-server', 'sudo', 'python3-apt', 'apparmor'} <= packages)
+        self.assertFalse({'k3s', 'kubelet', 'task-desktop', 'xorg', 'gnome', 'kde-plasma-desktop', 'docker.io'} & packages)
+        for name in ['grub-entry.cfg', 'isolinux-entry.cfg']:
+            boot = (ROOT / 'installer/media' / name).read_text()
+            self.assertIn('preseed/file=/cdrom/preseed.cfg', boot)
+            self.assertNotIn('/gtk/', boot)
+        apt = read_yaml(ROLE / 'tasks/packages.yml')[0]['ansible.builtin.apt']
+        self.assertFalse(apt['install_recommends'])
+        self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree'} <= set(apt['name']))
+
     def test_target_boundary(self):
         task = read_yaml(ROOT / 'ansible/microserver.yml')[0]['pre_tasks'][0]
         valid = dict(microserver_environment='tst', ansible_play_hosts_all=['nas'],

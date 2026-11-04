@@ -1,8 +1,8 @@
 # HPE ProLiant Gen10 Debian NAS
 
 This installer profile configures a separate HPE ProLiant MicroServer Gen10.
-Use the official Debian installer for the OS, then the repository-owned
-[Ansible playbook](ansible/microserver.yml) for services.
+Use the [USB media builder](docs/INSTALL-MEDIA.md) for a minimal Debian installer,
+then the repository-owned [Ansible playbook](ansible/microserver.yml) for services.
 Run the profile from a full reviewed checkout on the controller.
 The playbook does not partition disks, create/import pools, join Kubernetes,
 change firmware, or migrate workstation data. Source checks do not establish
@@ -12,7 +12,7 @@ physical installation, recovery, NFS access or monitoring performance.
 
 | Item | Owner-reported configuration and intended use |
 | --- | --- |
-| Platform | Original MicroServer Gen10; exact Opteron CPU remains to be discovered |
+| Platform | Original MicroServer Gen10, four-core Opteron X3418 or X3421; exact variant/speed remains to be discovered |
 | RAM | 24 GB; retain headroom for the OS and ZFS cache |
 | OS storage | 256 GB SSD: Debian, container images and active monitoring databases |
 | Bulk storage | Four new 2 TB Seagate IronWolf HDDs; supplied model ST2000VN004; verify each drive |
@@ -30,7 +30,10 @@ workstation SSDs. Use NFS for documents, datasets, model archives and backups.
 RAIDZ2 tolerates two disk failures; it does not provide a separate backup or
 protect availability when the whole MicroServer is down.
 
-Grafana, Prometheus and Alertmanager run independently of workstation K3s.
+Grafana, Prometheus and Alertmanager run in Docker Compose containers, managed
+by systemd on Debian, independently of workstation K3s. The native node exporter,
+NFS and ZFS run on the host. The MicroServer's scope is monitoring, storage and
+backup receiving; AI services and CPU-intensive processing stay on Threadripper.
 The profile records immutable image pins in `observability/versions.json`.
 Its initial workstation dashboards and pins came from the workstation project;
 this repository owns their subsequent review and updates. See [NOTICE](NOTICE).
@@ -40,7 +43,8 @@ Cluster-specific workstation absence/GPU rules are not reused as NAS health rule
 
 ## 1. Install Debian on the SSD
 
-Use verified official [Debian 13 AMD64 installation media](https://www.debian.org/releases/trixie/).
+Prepare the reviewed image with the [USB builder](docs/INSTALL-MEDIA.md), or use
+verified official [Debian 13 AMD64 installation media](https://www.debian.org/releases/trixie/).
 Identify the 256 GB SSD by model, serial and capacity. Disconnect the four HDDs
 during OS installation where practical. Install a minimal system with ext4 on
 the SSD, SSH and a named administrator; a desktop and ZFS root are unnecessary.
@@ -84,6 +88,10 @@ Matching headers for the running Debian kernel must be available. If they are
 unavailable, update and boot the supported Debian kernel before retrying bootstrap.
 No user is added to the Docker group. The default configure run does not repeat
 package installation or update all host packages.
+Recommended packages are disabled. AMD microcode, onboard Broadcom firmware,
+AppArmor and the ZFS event daemon are explicit dependencies. The custom install
+profile selects no desktop task or standard task bundle; only its small explicit
+base package list and installer-detected firmware are added.
 
 ## 3. Create and record the data pool locally
 
@@ -198,9 +206,14 @@ storage commands or trust settings are imported or executed by this profile.
 Use a private controller Python environment with the hashed wheel closure in
 `tests/requirements.lock`. `MICROSERVER_PYTHON` selects its interpreter. Run
 `make check` with Ansible, Docker Compose, ShellCheck, shfmt, promtool and amtool
-on PATH. The CI workflow prepares the pinned validation tools in temporary
-directories. Docker Compose only validates its configuration; no Docker daemon,
+on PATH, plus GnuPG, jq and xorriso for media checks. The CI workflow prepares the
+pinned validation tools in temporary directories. Docker Compose only validates
+its configuration; no Docker daemon,
 container execution or access to a real inventory is needed.
+Media tests also verify a real Debian signature, reject modified inputs, exercise
+the public payload/late hook and test USB identity/failure handling with OS adapters
+replaced by file-only fixtures. They never open a real device. A manually dispatched
+CI run with `build_media: true` also builds the full pinned ISO without writing USB.
 
 The checks exercise target classification, pool GUID matching, mounted-dataset
 and directory guards, exact NFS client validation, private credential metadata,

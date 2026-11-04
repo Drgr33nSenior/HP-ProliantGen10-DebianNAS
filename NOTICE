@@ -11,3 +11,7 @@ cbd3a20c65d724955c838aa0ddef3253f0289fcafc5e68e60668c5d918b706e2.
 
 The Ubuntu MicroServer tutorial is referenced for hardware background only.
 No code from that project is incorporated here.
+
+The guarded macOS USB writer and its safety fixtures were adapted from the
+workstation project's infrastructure/iso/usb.sh and tests/test_iso_usb.sh.
+The original MIT notice above also applies to these adapted files.

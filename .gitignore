@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 test-results/
+artifacts/
 .private/
 ansible/inventory.local.ini
 ansible/*.local.yml

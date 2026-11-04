@@ -1,5 +1,11 @@
 [
   {
+    "name": "xorriso",
+    "version": "1.5.8.pl02",
+    "url": "https://ftp.gnu.org/gnu/xorriso/xorriso-1.5.8.pl02.tar.gz",
+    "sha256": "b1455ecafbf0692ddafe1d71002a96f2ce2d77f4deae602678261ce033f97bc8"
+  },
+  {
     "name": "shfmt",
     "version": "v3.14.1",
     "url": "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64",

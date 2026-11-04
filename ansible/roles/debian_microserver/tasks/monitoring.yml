@@ -173,7 +173,7 @@
     enabled: true
     state: started
     daemon_reload: '{{ microserver_monitoring_unit.changed }}'
-  loop: [docker, prometheus-node-exporter, microserver-monitoring]
+  loop: [apparmor, docker, prometheus-node-exporter, microserver-monitoring]
   when: microserver_monitoring_enabled | bool
 
 - name: Apply pending service configuration before readiness checks
