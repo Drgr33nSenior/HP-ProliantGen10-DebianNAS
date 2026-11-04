@@ -103,6 +103,10 @@ Grafana, Prometheus and Alertmanager use Docker Compose on Debian under systemd;
 the node exporter, NFS and ZFS run on the host. No Kubernetes node, virtual
 machine, AI workload, embedding model or graph database is installed.
 
+The [backup design](BACKUPS.md) keeps Restic compression, encryption and usable
+decryption secrets on Threadripper. The NAS stores the encrypted repository.
+This does not encrypt ordinary NFS files or activate a workstation backup job.
+
 ## Verify the AQC107 network card
 
 The owner reports a Binardat RJ45 card with an Aquantia AQC107 controller.

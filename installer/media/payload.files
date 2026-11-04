@@ -1,6 +1,7 @@
 # Public setup source only. Real inventories, credentials and drive serials are excluded.
 README.md
 docs/INSTALL-MEDIA.md
+docs/BACKUPS.md
 LICENSE
 NOTICE
 third-party-licenses/ArchLinuxThreadripper-MIT.txt

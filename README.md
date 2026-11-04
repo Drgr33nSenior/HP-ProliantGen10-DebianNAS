@@ -33,6 +33,11 @@ workstation SSDs. Use NFS for documents, datasets, model archives and backups.
 RAIDZ2 tolerates two disk failures; it does not provide a separate backup or
 protect availability when the whole MicroServer is down.
 
+Workstation backups use client-side Restic processing: Threadripper deduplicates,
+compresses and encrypts before transmission. The MicroServer stores the encrypted
+repository; usable backup decryption secrets stay off the NAS. Ordinary NFS files
+remain ordinary shared files. See the [backup design and qualification](docs/BACKUPS.md).
+
 Grafana, Prometheus and Alertmanager run in Docker Compose containers, managed
 by systemd on Debian, independently of workstation K3s. The native node exporter,
 NFS and ZFS run on the host. The MicroServer's scope is monitoring, storage and
@@ -120,6 +125,10 @@ and an `ONLINE` pool. It creates only the missing `POOL/shared` dataset, with
 LZ4 compression and `/srv/microserver/shared` as its mountpoint. An existing
 directory at that path blocks dataset creation. An existing dataset must already
 be mounted at the exact expected path; the role does not force-mount it.
+LZ4 remains useful for ordinary shared files. For a future dedicated encrypted
+backup dataset, use `compression=off` and `dedup=off`: Restic has already processed
+the content on the workstation. This profile does not create that backup dataset
+or change existing dataset properties.
 
 Set the private configuration's pool GUID, exact private IPv4 NFS client
 addresses and the owner's numeric share UID/GID. Use matching numeric identities
