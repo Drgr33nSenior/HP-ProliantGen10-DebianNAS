@@ -26,7 +26,7 @@ jobs:
           echo "$RUNNER_TEMP/microserver-validation/bin" >> "$GITHUB_PATH"
           echo "$RUNNER_TEMP/microserver-tools/bin" >> "$GITHUB_PATH"
           echo "MICROSERVER_PYTHON=$RUNNER_TEMP/microserver-validation/bin/python" >> "$GITHUB_ENV"
-      - name: Validate source without host or container execution
+      - name: Validate source and isolated loopback fixtures
         run: make check
       - name: Build real installer media without USB access
         if: github.event_name == 'workflow_dispatch' && inputs.build_media

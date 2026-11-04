@@ -1,5 +1,5 @@
 # Linux host networking reaches the loopback-only native exporter. Every service
-# binds explicitly to loopback; this profile opens no LAN monitoring listener.
+# binds to loopback, apart from the explicitly enabled UniFi syslog receiver.
 services:
   prometheus:
     image: {{ microserver_prometheus_image }}
@@ -14,13 +14,13 @@ services:
       - --web.enable-remote-write-receiver
       - --query.max-concurrency=2
       - --query.timeout=30s
-    environment: {GOMEMLIMIT: 1228MiB}
+    environment: {GOMEMLIMIT: 1536MiB}
     volumes:
       - /etc/microserver/monitoring/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
       - /etc/microserver/monitoring/alerts.yaml:/etc/prometheus/alerts.yaml:ro
       - /var/lib/microserver/prometheus:/prometheus
-    mem_limit: 1536m
-    memswap_limit: 1536m
+    mem_limit: 2048m
+    memswap_limit: 2048m
     cpus: 0.5
     pids_limit: 256
     read_only: true
@@ -49,8 +49,8 @@ services:
       - /etc/microserver/monitoring/dashboards:/var/lib/grafana/dashboards:ro
       - /var/lib/microserver/grafana:/var/lib/grafana
     tmpfs: ['/tmp:size=64m,mode=1777']
-    mem_limit: 512m
-    memswap_limit: 512m
+    mem_limit: 2048m
+    memswap_limit: 2048m
     cpus: 0.5
     pids_limit: 256
     read_only: true
@@ -76,6 +76,42 @@ services:
     memswap_limit: 256m
     cpus: 0.1
     pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+  loki:
+    image: {{ microserver_loki_image }}
+    user: '10001:10001'
+    network_mode: host
+    command: [-config.file=/etc/loki/loki.yaml, -target=all]
+    environment: {GOMEMLIMIT: 768MiB}
+    volumes:
+      - /etc/microserver/monitoring/loki.yaml:/etc/loki/loki.yaml:ro
+      - /var/lib/microserver/loki:/loki
+    mem_limit: 1024m
+    memswap_limit: 1024m
+    cpus: 0.2
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+  vector:
+    image: {{ microserver_vector_image }}
+    user: '65534:65534'
+    network_mode: host
+    command: [--config, /etc/vector/vector.yaml, --threads, '1']
+    environment: {VECTOR_LOG: warn}
+    volumes:
+      - /etc/microserver/monitoring/vector.yaml:/etc/vector/vector.yaml:ro
+      - /var/lib/microserver/vector:/var/lib/vector
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.1
+    pids_limit: 64
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

@@ -21,3 +21,8 @@ groups:
         for: 5m
         labels: {severity: warning}
         annotations: {summary: 'MicroServer Docker metrics are unavailable or stale'}
+      - alert: MicroServerLogServiceUnavailable
+        expr: 'up{job=~"microserver-loki|microserver-vector"} == 0 or absent(up{job="microserver-loki"}) or absent(up{job="microserver-vector"})'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'MicroServer log storage or receiver is unavailable'}

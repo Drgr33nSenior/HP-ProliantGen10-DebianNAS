@@ -1,0 +1,70 @@
+tests:
+  - name: UDP sender metadata contains the exact IP without a port
+    inputs:
+      - insert_at: allowed_sender
+        type: log
+        log_fields:
+          sender_socket: '192.168.50.1'
+          message: 'CEF:0|Ubiquiti|UniFi Network|10.0.0|400|Synthetic UDP event|5|msg=fixture'
+    outputs:
+      - extract_from: unifi_cef
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.cef_parsed, true)
+              assert_eq!(.product, "network")
+              assert_eq!(.severity, "5")
+  - name: Raw UniFi CEF is parsed
+    inputs:
+      - insert_at: allowed_sender
+        type: log
+        log_fields:
+          sender_socket: '192.168.50.1:12345'
+          message: 'CEF:0|Ubiquiti|UniFi Network|10.0.0|400|Synthetic gateway event|5|msg=fixture'
+    outputs:
+      - extract_from: unifi_cef
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.cef_parsed, true)
+              assert_eq!(.product, "network")
+              assert_eq!(.severity, "5")
+              assert_eq!(.cef.name, "Synthetic gateway event")
+  - name: Syslog wrapped UniFi CEF is parsed
+    inputs:
+      - insert_at: allowed_sender
+        type: log
+        log_fields:
+          sender_socket: '192.168.50.1:12345'
+          message: '<134>Nov 4 12:00:00 gateway CEF:0|Ubiquiti|UniFi OS|5.0.0|101|Synthetic system event|3|msg=fixture'
+    outputs:
+      - extract_from: unifi_cef
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.cef_parsed, true)
+              assert_eq!(.product, "os")
+              assert_eq!(.severity, "3")
+  - name: Malformed CEF stays searchable without arbitrary severity labels
+    inputs:
+      - insert_at: allowed_sender
+        type: log
+        log_fields:
+          sender_socket: '192.168.50.1:12345'
+          message: 'Synthetic plain syslog event'
+    outputs:
+      - extract_from: unifi_cef
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.cef_parsed, false)
+              assert_eq!(.severity, "unknown")
+              assert_eq!(.message, "Synthetic plain syslog event")
+  - name: A different sender with a matching address prefix is dropped
+    inputs:
+      - insert_at: allowed_sender
+        type: log
+        log_fields:
+          sender_socket: '192.168.50.10:12345'
+          message: 'CEF:0|Ubiquiti|UniFi Network|10.0.0|400|Unexpected sender|5|msg=fixture'
+    no_outputs_from: [unifi_cef]

@@ -7,3 +7,6 @@ microserver_share_gid: 0
 microserver_monitoring_enabled: false
 microserver_irqbalance_enabled: true
 microserver_dimm_limits_enabled: false
+microserver_unifi_syslog_enabled: false
+microserver_unifi_gateway_ip: ''
+microserver_unifi_syslog_listen_ip: ''

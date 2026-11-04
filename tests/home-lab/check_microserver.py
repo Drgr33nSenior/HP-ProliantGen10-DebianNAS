@@ -1,6 +1,7 @@
 """Exercise the actual installer guards and templates without contacting a host."""
 import copy
 import configparser
+from decimal import Decimal
 import importlib.util
 import io
 import json
@@ -324,7 +325,8 @@ class MicroServerTests(unittest.TestCase):
     def test_compose_security_and_canonical_images(self):
         compose = ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(**self.context)
         config = yaml.safe_load(compose)
-        self.assertLessEqual(sum(service['cpus'] for service in config['services'].values()), 1.1)
+        self.assertLessEqual(sum(Decimal(str(service['cpus'])) for service in config['services'].values()), Decimal('1.4'))
+        self.assertLessEqual(sum(int(service['mem_limit'].removesuffix('m')) for service in config['services'].values()), 5632)
         for service in config['services'].values():
             self.assertRegex(service['image'], r'@sha256:[a-f0-9]{64}$')
             self.assertTrue(service['read_only'])
@@ -347,7 +349,7 @@ class MicroServerTests(unittest.TestCase):
         self.assertEqual(target, '/tmp')
         self.assertEqual(dict(option.split('=', 1) for option in options.split(',')),
                          dict(size='64m', mode='1777'))
-        for name in ['prometheus', 'grafana', 'alertmanager']:
+        for name in ['prometheus', 'grafana', 'alertmanager', 'loki', 'vector']:
             self.assertEqual(config['services'][name]['image'], self.context[f'microserver_{name}_image'])
         self.assertIn('--web.listen-address=127.0.0.1:9090', config['services']['prometheus']['command'])
         self.assertIn('--query.max-concurrency=2', config['services']['prometheus']['command'])
@@ -362,6 +364,33 @@ class MicroServerTests(unittest.TestCase):
             output.mkdir(parents=True, exist_ok=True)
             (output / 'compose.yaml').write_text(str(compose))
             (output / 'prometheus.yaml').write_text(str(ENV.from_string((ROLE / 'templates/prometheus.yaml.j2').read_text()).render(**self.context)))
+
+    def test_syslog_sender_and_bind_guards(self):
+        endpoint = next(task for task in self.monitoring if task['name'].startswith('Require exact private IPv4 syslog'))
+        binding = next(task for task in self.monitoring if task['name'].startswith('Require the syslog bind'))
+        for address in ['192.168.50.1', '10.0.0.1', '172.20.0.1']:
+            self.assertTrue(assertions(endpoint, dict(item=address)))
+        for address in ['', '0.0.0.0', '*', '192.168.50.0/24', '203.0.113.1',
+                        '127.0.0.1', '192.168.050.1', '192.168.50.1\n', None]:
+            self.assertFalse(assertions(endpoint, dict(item=address)))
+        context = dict(microserver_unifi_gateway_ip='192.168.50.1',
+                       microserver_unifi_syslog_listen_ip='192.168.50.10',
+                       ansible_facts=dict(all_ipv4_addresses=['192.168.50.10']))
+        self.assertTrue(assertions(binding, context))
+        self.assertFalse(assertions(binding, dict(context, microserver_unifi_syslog_listen_ip='192.168.50.11')))
+        self.assertFalse(assertions(binding, dict(context, microserver_unifi_gateway_ip='192.168.50.10')))
+        vector = yaml.safe_load(ENV.from_string((ROLE / 'templates/vector.yaml.j2').read_text()).render(**self.context))
+        self.assertNotIn('unifi', vector['sources'])
+        self.assertEqual(vector['sinks']['metrics']['address'], '127.0.0.1:8687')
+        enabled = dict(self.context, **context, microserver_unifi_syslog_enabled=True)
+        vector = yaml.safe_load(ENV.from_string((ROLE / 'templates/vector.yaml.j2').read_text()).render(**enabled))
+        self.assertEqual(vector['sources']['unifi']['address'], '192.168.50.10:1514')
+        self.assertEqual(vector['sources']['unifi']['mode'], 'udp')
+        self.assertEqual(set(vector['sinks']['loki']['labels']), {'job', 'product', 'severity'})
+        self.assertEqual(vector['sinks']['loki']['buffer']['max_size'], 536870912)
+        for name in ['metrics', 'logs']:
+            datasource = read_yaml(ROOT / f'observability/config/datasources.{name}.yaml')['datasources'][0]
+            self.assertIn(datasource['uid'], ['prometheus', 'loki'])
 
     def test_dashboard_queries_have_data_and_correct_units(self):
         dashboard = json.loads((ROLE / 'files/microserver-dashboard.json').read_text())

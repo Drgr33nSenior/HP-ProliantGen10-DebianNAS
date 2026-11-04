@@ -53,6 +53,20 @@ tests:
           - exp_labels: {severity: warning, job: microserver-node}
             exp_annotations: {summary: 'MicroServer Docker metrics are unavailable or stale'}
       - {eval_time: 12m, alertname: MicroServerDockerMetricsUnavailable, exp_alerts: []}
+  - name: Log service failure fires and recovers
+    interval: 1m
+    input_series:
+      - series: 'up{job="microserver-loki"}'
+        values: '0x5 1x10'
+      - series: 'up{job="microserver-vector"}'
+        values: '1x16'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MicroServerLogServiceUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning, job: microserver-loki}
+            exp_annotations: {summary: 'MicroServer log storage or receiver is unavailable'}
+      - {eval_time: 12m, alertname: MicroServerLogServiceUnavailable, exp_alerts: []}
   - name: Stale Docker collection fires despite last success
     interval: 1m
     input_series:

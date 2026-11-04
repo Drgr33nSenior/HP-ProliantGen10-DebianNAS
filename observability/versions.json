@@ -20,6 +20,18 @@
       "version": "0.34.1",
       "image": "docker.io/prom/alertmanager:v0.34.1@sha256:84967b9b7ba45e38a9278d3e594305f43d4993c310df3905b51138b816c365f3",
       "source": "https://github.com/prometheus/alertmanager/releases/tag/v0.34.1"
+    },
+    {
+      "component": "loki",
+      "version": "3.7.9",
+      "image": "docker.io/grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28",
+      "source": "https://github.com/grafana/loki/releases/tag/v3.7.9"
+    },
+    {
+      "component": "vector",
+      "version": "0.61.0",
+      "image": "docker.io/timberio/vector:0.61.0-debian@sha256:f6c23b5a7e16fb2838d33619ef7acf4bad2289a7cf22bc90efc2371f520c4ea2",
+      "source": "https://github.com/vectordotdev/vector/releases/tag/v0.61.0"
     }
   ]
 }

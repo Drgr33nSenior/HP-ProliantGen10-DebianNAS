@@ -15,6 +15,18 @@ while IFS=$'\t' read -r name url digest; do
     install -m 755 "$archive" "$output/bin/shfmt"
     continue
   fi
+  if [[ $name == loki ]]; then
+    mkdir "$output/$name"
+    unzip -q "$archive" -d "$output/$name"
+    ln -s "$output/$name/loki-linux-amd64" "$output/bin/loki"
+    continue
+  fi
+  if [[ $name == vector ]]; then
+    mkdir "$output/$name"
+    tar -xf "$archive" -C "$output/$name"
+    ln -s "$output/$name/vector-x86_64-unknown-linux-gnu/bin/vector" "$output/bin/vector"
+    continue
+  fi
   mkdir "$output/$name"
   tar -xf "$archive" --strip-components=1 -C "$output/$name"
   case "$name" in

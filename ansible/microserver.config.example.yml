@@ -10,3 +10,8 @@ microserver_monitoring_enabled: false
 microserver_irqbalance_enabled: true
 # Enable only for the Micron DIMM pair qualified in docs/HOST-TOOLS.md.
 microserver_dimm_limits_enabled: false
+# Enable only after selecting the exact gateway sender and NAS LAN address.
+# UniFi sends CEF logs to UDP 1514. No listener is opened while this is false.
+microserver_unifi_syslog_enabled: false
+microserver_unifi_gateway_ip: ''
+microserver_unifi_syslog_listen_ip: ''

@@ -28,5 +28,17 @@
     "version": "v3.14.0",
     "url": "https://github.com/prometheus/prometheus/releases/download/v3.14.0/prometheus-3.14.0.linux-amd64.tar.gz",
     "sha256": "f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d"
+  },
+  {
+    "name": "loki",
+    "version": "v3.7.9",
+    "url": "https://github.com/grafana/loki/releases/download/v3.7.9/loki-linux-amd64.zip",
+    "sha256": "17a5fae28ce733b3560c27c76620920b169bd2aea9473947b733b511f92e81dd"
+  },
+  {
+    "name": "vector",
+    "version": "v0.61.0",
+    "url": "https://github.com/vectordotdev/vector/releases/download/v0.61.0/vector-0.61.0-x86_64-unknown-linux-gnu.tar.gz",
+    "sha256": "84a27c3ad6b772fdb05bb76ea01a31498bfc8f5e71f32cc78a0d96841f1aa827"
   }
 ]

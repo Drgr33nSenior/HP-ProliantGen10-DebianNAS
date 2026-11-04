@@ -1,0 +1,33 @@
+{
+  "uid": "unifi-logs",
+  "title": "UniFi events",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["unifi", "logs"],
+  "refresh": "1m",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "title": "Events by severity", "type": "timeseries",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 7},
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "sum by (severity) (count_over_time({job=\"unifi\"}[5m]))", "queryType": "range", "legendFormat": "Severity {{severity}}"}]
+    },
+    {
+      "id": 2, "title": "Events by application", "type": "timeseries",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 7},
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "sum by (product) (count_over_time({job=\"unifi\"}[5m]))", "queryType": "range", "legendFormat": "{{product}}"}]
+    },
+    {
+      "id": 3, "title": "UniFi events", "type": "logs",
+      "description": "Gateway SIEM/syslog events. Expand a record for parsed CEF fields. An empty panel can mean that no events have arrived; inspect receiver and Loki health separately.",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"x": 0, "y": 7, "w": 24, "h": 15},
+      "options": {"showTime": true, "showLabels": false, "wrapLogMessage": true, "sortOrder": "Descending", "prettifyLogMessage": true},
+      "targets": [{"refId": "A", "expr": "{job=\"unifi\"} | json", "queryType": "range"}]
+    }
+  ]
+}

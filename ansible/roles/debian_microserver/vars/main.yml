@@ -4,3 +4,5 @@ microserver_observability_lock: "{{ lookup('ansible.builtin.file', playbook_dir 
 microserver_prometheus_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'prometheus') | first).image }}"
 microserver_grafana_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'grafana') | first).image }}"
 microserver_alertmanager_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'alertmanager') | first).image }}"
+microserver_loki_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'loki') | first).image }}"
+microserver_vector_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'vector') | first).image }}"

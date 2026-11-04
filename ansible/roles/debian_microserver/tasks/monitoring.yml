@@ -1,4 +1,23 @@
 ---
+- name: Require exact private IPv4 syslog endpoints before opening a listener
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^(10[.](?:[0-9]{1,3}[.]){2}[0-9]{1,3}|192[.]168[.][0-9]{1,3}[.][0-9]{1,3}|172[.](?:1[6-9]|2[0-9]|3[01])[.][0-9]{1,3}[.][0-9]{1,3})$')
+      - item.split('.') | map('int') | max <= 255
+      - item.split('.') | map('int') | join('.') == item
+    fail_msg: UniFi logging requires exact private IPv4 gateway and NAS addresses; no wildcard, subnet or public endpoint.
+  loop: ['{{ microserver_unifi_gateway_ip }}', '{{ microserver_unifi_syslog_listen_ip }}']
+  when: microserver_unifi_syslog_enabled | bool
+
+- name: Require the syslog bind address on this NAS
+  ansible.builtin.assert:
+    that:
+      - microserver_unifi_syslog_listen_ip in ansible_facts.all_ipv4_addresses
+      - microserver_unifi_gateway_ip != microserver_unifi_syslog_listen_ip
+    fail_msg: Bind syslog to an actual NAS address and select a separate gateway sender.
+  when: microserver_unifi_syslog_enabled | bool
+
 - name: Inspect monitoring paths before creating configuration or data
   ansible.builtin.stat:
     path: '{{ item.path }}'
@@ -18,6 +37,8 @@
     - {path: /var/lib/microserver/grafana, uid: 472}
     - {path: /var/lib/microserver/alertmanager, uid: 65534}
     - {path: /var/lib/microserver/node-exporter, uid: 0}
+    - {path: /var/lib/microserver/loki, uid: 10001}
+    - {path: /var/lib/microserver/vector, uid: 65534}
     - {path: /usr/local, uid: 0}
     - {path: /usr/local/libexec, uid: 0}
   register: microserver_monitoring_paths
@@ -64,6 +85,8 @@
     - {name: prometheus, uid: 65534}
     - {name: grafana, uid: 472}
     - {name: alertmanager, uid: 65534}
+    - {name: loki, uid: 10001}
+    - {name: vector, uid: 65534}
 
 - name: Render local monitoring configuration
   ansible.builtin.template:
@@ -75,6 +98,7 @@
   loop:
     - {src: compose.yaml.j2, dest: compose.yaml}
     - {src: prometheus.yaml.j2, dest: prometheus.yaml}
+    - {src: vector.yaml.j2, dest: vector.yaml}
   notify: Reload MicroServer monitoring
 
 - name: Install the NAS alert rules and local Alertmanager route
@@ -84,7 +108,7 @@
     owner: root
     group: root
     mode: '0644'
-  loop: [alerts.yaml, alertmanager.yaml]
+  loop: [alerts.yaml, alertmanager.yaml, loki.yaml]
   notify: Reload MicroServer monitoring
 
 - name: Reuse the canonical Prometheus datasource with a local address
@@ -105,6 +129,15 @@
     mode: '0644'
   notify: Reload MicroServer monitoring
 
+- name: Provision the local Loki datasource
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/config/datasources.logs.yaml'
+    dest: /etc/microserver/monitoring/provisioning/datasources/loki.yaml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer monitoring
+
 - name: Reuse the canonical dashboards without copying a second maintained source
   ansible.builtin.copy:
     src: '{{ playbook_dir }}/../observability/dashboards/'
@@ -119,6 +152,15 @@
   ansible.builtin.copy:
     src: microserver-dashboard.json
     dest: /etc/microserver/monitoring/dashboards/microserver.json
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer monitoring
+
+- name: Add the UniFi events dashboard
+  ansible.builtin.copy:
+    src: unifi-logs-dashboard.json
+    dest: /etc/microserver/monitoring/dashboards/unifi-logs.json
     owner: root
     group: root
     mode: '0644'
@@ -246,17 +288,20 @@
     - http://127.0.0.1:3000/api/health
     - http://127.0.0.1:9093/-/ready
     - http://127.0.0.1:9100/
+    - http://127.0.0.1:3100/ready
+    - http://127.0.0.1:8687/metrics
   when: microserver_monitoring_enabled | bool and not ansible_check_mode
 
-- name: Require the bundled Prometheus plugin frontend after activation
+- name: Require the bundled query plugin frontends after activation
   ansible.builtin.uri:
-    url: http://127.0.0.1:3000/public/plugins/prometheus/module.js
+    url: 'http://127.0.0.1:3000/public/plugins/{{ item }}/module.js'
     method: HEAD
     return_content: false
     status_code: 200
     timeout: 5
-  register: microserver_prometheus_plugin
-  until: microserver_prometheus_plugin.status | default(0) == 200
+  register: microserver_query_plugin
+  until: microserver_query_plugin.status | default(0) == 200
+  loop: [prometheus, loki]
   retries: 12
   delay: 5
   when: microserver_monitoring_enabled | bool and not ansible_check_mode

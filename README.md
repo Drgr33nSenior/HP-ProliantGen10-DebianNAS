@@ -38,7 +38,7 @@ compresses and encrypts before transmission. The MicroServer stores the encrypte
 repository; usable backup decryption secrets stay off the NAS. Ordinary NFS files
 remain ordinary shared files. See the [backup design and qualification](docs/BACKUPS.md).
 
-Grafana, Prometheus and Alertmanager run in Docker Compose containers, managed
+Grafana, Prometheus, Alertmanager, Loki and Vector run in Docker Compose containers, managed
 by systemd on Debian, independently of workstation K3s. The native node exporter,
 NFS and ZFS run on the host. The MicroServer's scope is monitoring, storage and
 backup receiving; AI services and CPU-intensive processing stay on Threadripper.
@@ -243,13 +243,16 @@ The role checks only file metadata, without checksums or credential retrieval.
 Set `microserver_monitoring_enabled: true` in the private variable file and
 repeat the configure apply. It validates Compose and starts the native exporter,
 Docker and `microserver-monitoring.service`, then checks service readiness
-and the bundled Prometheus plugin asset. Runtime containers use non-root UIDs,
+and the bundled Prometheus/Loki plugin assets. Runtime containers use non-root UIDs,
 dropped capabilities, read-only roots, bounded memory/CPU/PIDs, bounded Docker
 logs and immutable images.
-The three container memory limits total 2304 MiB, excluding Docker, the native
+The five container memory limits total 5632 MiB (5.5 GiB), excluding Docker, the native
 exporter, OS and ZFS cache; actual usage remains to be measured.
+Grafana and Prometheus each have 2 GiB ceilings, Loki has 1 GiB, and Vector
+and Alertmanager have 256 MiB each. The limits are not memory reservations.
 Initial CPU ceilings for the dual-core X3216 are 0.5 CPU for Prometheus,
-0.5 for Grafana and 0.1 for Alertmanager, totaling 1.1 CPUs. These ceilings
+0.5 for Grafana, 0.1 for Alertmanager, 0.2 for Loki and 0.1 for Vector,
+totaling 1.4 CPUs. These ceilings
 are not reservations or a measured performance guarantee. Prometheus query
 concurrency starts at two; qualify ingestion and dashboard latency on hardware.
 The exporter includes available hardware temperature/fan readings and network
@@ -275,10 +278,18 @@ Failed or stale collection raises a local alert. See
 
 Linux host networking lets containers reach the loopback-only native exporter.
 Grafana 3000, Prometheus 9090, Alertmanager 9093 and node exporter 9100 bind only
-to `127.0.0.1`. Use owner SSH forwarding to inspect the UIs. Prometheus starts
+to `127.0.0.1`. Loki HTTP 3100/gRPC 9095 and Vector metrics 8687 also use loopback.
+Use owner SSH forwarding to inspect the UIs. Prometheus starts
 with 14-day/24-GB retention on the SSD; this is not a quota on the whole SSD.
 The local Alertmanager UI receives NAS alerts; no external notification receiver
 is configured and no messages are sent.
+
+Loki stores logs on the OS SSD with seven-day retention and bounded ingestion,
+caches and query concurrency. Vector provides a stable CEF parser and a 512 MiB
+disk buffer. The UniFi UDP listener is disabled by default. Enabling it requires
+an exact private gateway sender and an actual NAS bind address; it forwards
+only that sender's records on UDP 1514. Existing firewall rules are preserved.
+See [UniFi log setup and acceptance checks](docs/UNIFI-LOGS.md).
 
 Before LAN telemetry cutover, review actual addresses, TLS/authentication and
 firewall scope, then qualify Alloy forwarding, node labels and workstation
@@ -302,7 +313,7 @@ Remaining hardware acceptance includes repeated configuration/idempotence,
 DKMS/module loading and reboot, pool import/mount, SMART self-tests, scheduled
 scrubs/snapshots, separate backup and restore, NFS permissions, measured SSD/RAM/
 CPU use, 10GbE throughput, and private telemetry/notification cutover. SMB,
-Loki/Tempo and joining K3s are follow-ups, not enabled by this profile.
+Tempo and joining K3s are follow-ups, not enabled by this profile.
 
 The third-party [Ubuntu MicroServer project](https://github.com/aamkye/ubuntu_on_HPE_ProLiant_MS_GEN10)
 is a hardware reference only. No third-party playbooks, credentials, kernel PPA,

@@ -1,0 +1,65 @@
+data_dir: /var/lib/vector
+api:
+  enabled: false
+sources:
+  internal:
+    type: internal_metrics
+    scrape_interval_secs: 60
+{% if microserver_unifi_syslog_enabled | bool %}
+  unifi:
+    type: socket
+    mode: udp
+    address: '{{ microserver_unifi_syslog_listen_ip }}:1514'
+    max_length: 65536
+    host_key: sender_socket
+    decoding: {codec: bytes}
+transforms:
+  allowed_sender:
+    type: filter
+    inputs: [unifi]
+    condition: '(string(.sender_socket) ?? "") == "{{ microserver_unifi_gateway_ip }}" || starts_with(string(.sender_socket) ?? "", "{{ microserver_unifi_gateway_ip }}:")'
+  unifi_cef:
+    type: remap
+    inputs: [allowed_sender]
+    source: |
+      .severity = "unknown"
+      .product = "unifi"
+      .cef_parsed = false
+      event, error = parse_cef(string!(.message))
+      if error == null {
+        .cef = event
+        .cef_parsed = true
+        level = to_int(event.severity) ?? -1
+        if level >= 0 && level <= 10 {
+          .severity = to_string(level)
+        }
+        if event.deviceProduct == "UniFi Network" {
+          .product = "network"
+        } else if event.deviceProduct == "UniFi OS" {
+          .product = "os"
+        } else if event.deviceProduct == "UniFi Protect" {
+          .product = "protect"
+        }
+      }
+{% endif %}
+sinks:
+  metrics:
+    type: prometheus_exporter
+    inputs: [internal]
+    address: 127.0.0.1:8687
+{% if microserver_unifi_syslog_enabled | bool %}
+  loki:
+    type: loki
+    inputs: [unifi_cef]
+    endpoint: http://127.0.0.1:3100
+    encoding: {codec: json}
+    labels:
+      job: unifi
+{% raw %}
+      product: '{{ product }}'
+      severity: '{{ severity }}'
+{% endraw %}
+    batch: {max_bytes: 131072, timeout_secs: 2}
+    buffer: {type: disk, max_size: 536870912, when_full: block}
+    request: {concurrency: 1, timeout_secs: 10}
+{% endif %}
