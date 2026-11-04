@@ -81,6 +81,14 @@ class MicroServerTests(unittest.TestCase):
         self.assertEqual(apt['policy_rc_d'], 101)
         self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree', 'firmware-amd-graphics', 'ethtool', 'pciutils', 'lm-sensors', 'iperf3', 'nftables', 'systemd-timesyncd', 'irqbalance', 'linux-cpupower', 'powertop'} <= set(apt['name']))
 
+    def test_iommu_workaround_is_in_installer_and_persistent_boot_options(self):
+        for name, command in [('grub-entry.cfg', 'linux '), ('isolinux-entry.cfg', 'append ')]:
+            lines = (ROOT / 'installer/media' / name).read_text().splitlines()
+            args = next(line.strip().split()[1:] for line in lines if line.strip().startswith(command))
+            self.assertEqual(args.count('iommu=pt'), 1)
+            self.assertIn('iommu=pt', args[args.index('---') + 1:])
+            self.assertFalse(any(arg.startswith('iommu=') and arg != 'iommu=pt' for arg in args))
+
     def test_host_tools_do_not_enable_benchmark_or_power_autotuning(self):
         tasks = read_yaml(ROLE / 'tasks/packages.yml')
         selection = next(task['ansible.builtin.debconf'] for task in tasks if 'ansible.builtin.debconf' in task)

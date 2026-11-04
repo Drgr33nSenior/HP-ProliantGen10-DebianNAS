@@ -11,6 +11,13 @@ Accounts, passwords, partitioning and OS-disk selection stay interactive.
 No HDD serial, private inventory, credential or automatic partition recipe is
 included. Disconnect the four HDDs during OS installation where practical.
 
+The MicroServer entry includes the owner-required `iommu=pt` workaround for the
+reported SATA issue in both BIOS and UEFI modes. It appears after Debian's
+`---` separator so GRUB installation carries it into the installed boot options;
+see [Debian's boot-parameter propagation](https://www.debian.org/releases/trixie/amd64/apbs02.en.html#preseed-bootparms).
+If you choose an unmodified vendor recovery/installer entry, add `iommu=pt`
+manually before booting that entry.
+
 ## Build on the controller
 
 Run as an ordinary user from the reviewed checkout on macOS or Linux. Require
@@ -81,7 +88,9 @@ installation media. USB readback does not establish a successful physical boot.
 3. Create the named administrator and password locally. Root login is disabled;
    no passwords are present on the USB.
 4. Finish installation and remove the USB. Confirm Debian boots from the SSD,
-   the correct network interface works, and the administrator has sudo access.
+   `/proc/cmdline` contains `iommu=pt`, the correct network interface works,
+   and the administrator has sudo access. Verify SATA disk visibility before
+   any pool setup; boot-option presence alone does not qualify the workaround.
 5. Review the staged source at `/opt/microserver-installer`. Its late hook checks
    the source manifest, copies public setup files and installs a no-recommends
    APT policy. It does not run Ansible, create/import a pool or start monitoring.

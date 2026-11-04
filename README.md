@@ -57,6 +57,9 @@ Identify the 256 GB SSD by model, serial and capacity. Disconnect the four HDDs
 during OS installation where practical. Install a minimal system with ext4 on
 the SSD, SSH and a named administrator; a desktop and ZFS root are unnecessary.
 Do not select the HDDs for OS partitioning or LVM.
+Use the custom MicroServer boot entry, which includes the owner-required
+`iommu=pt` SATA workaround for installation and the installed GRUB configuration.
+Verify it in `/proc/cmdline` after the first SSD boot and check disk visibility.
 
 Use Debian's kernel and signed package repositories. Enable Debian `contrib`
 for ZFS, with matching kernel headers; follow the
