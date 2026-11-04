@@ -1,0 +1,197 @@
+---
+- name: Inspect monitoring paths before creating configuration or data
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - {path: /etc/microserver, uid: 0}
+    - {path: /etc/microserver/monitoring, uid: 0}
+    - {path: /etc/microserver/private, uid: 0}
+    - {path: /etc/microserver/monitoring/provisioning, uid: 0}
+    - {path: /etc/microserver/monitoring/provisioning/datasources, uid: 0}
+    - {path: /etc/microserver/monitoring/provisioning/dashboards, uid: 0}
+    - {path: /etc/microserver/monitoring/dashboards, uid: 0}
+    - {path: /var/lib/microserver, uid: 0}
+    - {path: /var/lib/microserver/prometheus, uid: 65534}
+    - {path: /var/lib/microserver/grafana, uid: 472}
+    - {path: /var/lib/microserver/alertmanager, uid: 65534}
+  register: microserver_monitoring_paths
+
+- name: Reject symlinked or writable monitoring directories
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir | default(false) and not item.stat.islnk | default(false) and item.stat.uid == item.item.uid and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+  loop: '{{ microserver_monitoring_paths.results }}'
+
+- name: Create monitoring configuration directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /etc/microserver
+    - /etc/microserver/monitoring
+    - /etc/microserver/monitoring/provisioning
+    - /etc/microserver/monitoring/provisioning/datasources
+    - /etc/microserver/monitoring/provisioning/dashboards
+    - /var/lib/microserver
+
+- name: Keep private credential preparation local to the owner
+  ansible.builtin.file:
+    path: /etc/microserver/private
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Create bounded service state directories on the OS filesystem
+  ansible.builtin.file:
+    path: '/var/lib/microserver/{{ item.name }}'
+    state: directory
+    owner: '{{ item.uid }}'
+    group: '{{ item.uid }}'
+    mode: '0700'
+  loop:
+    - {name: prometheus, uid: 65534}
+    - {name: grafana, uid: 472}
+    - {name: alertmanager, uid: 65534}
+
+- name: Render local monitoring configuration
+  ansible.builtin.template:
+    src: '{{ item.src }}'
+    dest: '/etc/microserver/monitoring/{{ item.dest }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - {src: compose.yaml.j2, dest: compose.yaml}
+    - {src: prometheus.yaml.j2, dest: prometheus.yaml}
+  notify: Reload MicroServer monitoring
+
+- name: Install the NAS alert rules and local Alertmanager route
+  ansible.builtin.copy:
+    src: '{{ item }}'
+    dest: '/etc/microserver/monitoring/{{ item }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [alerts.yaml, alertmanager.yaml]
+  notify: Reload MicroServer monitoring
+
+- name: Reuse the canonical Prometheus datasource with a local address
+  ansible.builtin.copy:
+    content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../observability/config/datasources.metrics.yaml') | replace('http://prometheus:9090', 'http://127.0.0.1:9090') }}\n"
+    dest: /etc/microserver/monitoring/provisioning/datasources/prometheus.yaml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer monitoring
+
+- name: Reuse the canonical dashboard provider
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/config/dashboards.yaml'
+    dest: /etc/microserver/monitoring/provisioning/dashboards/workstation.yaml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer monitoring
+
+- name: Reuse the canonical dashboards without copying a second maintained source
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/dashboards/'
+    dest: /etc/microserver/monitoring/dashboards/
+    owner: root
+    group: root
+    mode: '0644'
+    directory_mode: '0755'
+  notify: Reload MicroServer monitoring
+
+- name: Add the NAS dashboard to the shared dashboard folder
+  ansible.builtin.copy:
+    src: microserver-dashboard.json
+    dest: /etc/microserver/monitoring/dashboards/microserver.json
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer monitoring
+
+- name: Bind the Debian node exporter to loopback
+  ansible.builtin.copy:
+    dest: /etc/default/prometheus-node-exporter
+    content: |
+      ARGS="--web.listen-address=127.0.0.1:9100 --collector.disable-defaults --collector.cpu --collector.meminfo --collector.filesystem --collector.diskstats --collector.pressure --collector.stat --collector.time --collector.uname --collector.zfs"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart MicroServer node exporter
+
+- name: Install the monitoring service
+  ansible.builtin.copy:
+    src: microserver-monitoring.service
+    dest: /etc/systemd/system/microserver-monitoring.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: microserver_monitoring_unit
+  notify: Reload MicroServer monitoring
+
+- name: Inspect only Grafana credential metadata before activation
+  ansible.builtin.stat:
+    path: /etc/microserver/private/grafana-admin-password
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_grafana_credential
+  when: microserver_monitoring_enabled | bool
+
+- name: Require a private owner-prepared credential without reading it
+  ansible.builtin.assert:
+    that:
+      - microserver_grafana_credential.stat.exists
+      - microserver_grafana_credential.stat.isreg | default(false)
+      - not microserver_grafana_credential.stat.islnk | default(false)
+      - microserver_grafana_credential.stat.uid == 0
+      - microserver_grafana_credential.stat.gid == 472
+      - microserver_grafana_credential.stat.mode == '0440'
+      - microserver_grafana_credential.stat.size >= 16
+    fail_msg: Prepare the Grafana password locally as documented; this play never generates or reads credentials.
+  when: microserver_monitoring_enabled | bool
+
+- name: Validate Compose before activation
+  ansible.builtin.command:
+    argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, config, --quiet]
+  changed_when: false
+  when: microserver_monitoring_enabled | bool and not ansible_check_mode
+
+- name: Enable required monitoring services only after explicit activation
+  ansible.builtin.systemd_service:
+    name: '{{ item }}'
+    enabled: true
+    state: started
+    daemon_reload: '{{ microserver_monitoring_unit.changed }}'
+  loop: [docker, prometheus-node-exporter, microserver-monitoring]
+  when: microserver_monitoring_enabled | bool
+
+- name: Apply pending service configuration before readiness checks
+  ansible.builtin.meta: flush_handlers
+
+- name: Check local monitoring readiness without collecting application content
+  ansible.builtin.uri:
+    url: '{{ item }}'
+    return_content: false
+    status_code: 200
+    timeout: 5
+  register: microserver_readiness
+  until: microserver_readiness.status | default(0) == 200
+  retries: 12
+  delay: 5
+  loop:
+    - http://127.0.0.1:9090/-/ready
+    - http://127.0.0.1:3000/api/health
+    - http://127.0.0.1:9093/-/ready
+    - http://127.0.0.1:9100/
+  when: microserver_monitoring_enabled | bool and not ansible_check_mode

@@ -1,0 +1,753 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "Overview",
+      "type": "link",
+      "url": "/d/workstation-overview",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Overview with the same time range"
+    },
+    {
+      "title": "Kubernetes",
+      "type": "link",
+      "url": "/d/workstation-kubernetes",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Kubernetes with the same time range"
+    },
+    {
+      "title": "Pods",
+      "type": "link",
+      "url": "/d/workstation-pods",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Pods with the same time range"
+    },
+    {
+      "title": "GPUs",
+      "type": "link",
+      "url": "/d/workstation-gpus",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open GPUs with the same time range"
+    },
+    {
+      "title": "Host",
+      "type": "link",
+      "url": "/d/workstation-host",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Host with the same time range"
+    },
+    {
+      "title": "Serving",
+      "type": "link",
+      "url": "/d/workstation-workloads",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Serving with the same time range"
+    },
+    {
+      "title": "Power",
+      "type": "link",
+      "url": "/d/workstation-power",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Power with the same time range"
+    },
+    {
+      "title": "Monitoring",
+      "type": "link",
+      "url": "/d/workstation-monitoring",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Monitoring with the same time range"
+    }
+  ],
+  "tags": [
+    "workstation",
+    "drilldown"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "uid": "workstation-gpus",
+  "title": "Workstation / GPUs",
+  "description": "Inspect one R9700 or compare separate PCI identities: activity, VRAM, sensors and clocks.",
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timepicker": {
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "gpu",
+        "label": "GPU · PCI address",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(workstation_gpu_info{job=\"node\"}, pci_bdf)",
+        "query": {
+          "query": "label_values(workstation_gpu_info{job=\"node\"}, pci_bdf)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Reading this view",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Select one PCI address, or **All** to compare both. **GPUs can be runtime-suspended when idle.** In that state, this driver can refuse activity, clock, temperature and power reads while identity and VRAM remain readable. Blank charts are missing readings, not measured zero or evidence of a failed collector.\n\nThe status row below reports activity/clock channel availability; it does not prove the GPU's power state or health. The dashboard does not wake a card or change its power policy."
+      }
+    },
+    {
+      "id": 11,
+      "title": "Activity / clock sensor availability",
+      "type": "stat",
+      "description": "Minimum readability of the busy/core-clock/memory-clock channels per card. 0 means at least one channel was unavailable, including when runtime-suspended; it does not imply a hardware fault or zero activity. No data means the fresh availability observation itself is missing.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min by (pci_bdf) (workstation_gpu_sensor_available{job=\"node\",pci_bdf=~\"${gpu:regex}\",sensor=~\"busy_percent|core_clock_hertz|memory_clock_hertz\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10))",
+          "legendFormat": "{{pci_bdf}}",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Telemetry unavailable",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unavailable (may be asleep)",
+                  "color": "text"
+                },
+                "1": {
+                  "text": "Readable",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "GPU activity",
+      "type": "timeseries",
+      "description": "Thirty-second sampled busy percentage; not matrix-engine occupancy.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_gpu_busy_percent{job=\"node\",pci_bdf=~\"${gpu:regex}\"} / 100 and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "VRAM used and physical capacity",
+      "type": "timeseries",
+      "description": "Separate capacity per GPU; do not treat two cards as one allocation.",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_gpu_vram_used_bytes{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}} used",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "workstation_gpu_vram_total_bytes{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}} total",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "GPU temperature channels",
+      "type": "timeseries",
+      "description": "Native hwmon labels identify edge, junction and memory channels per PCI address. No unsupported device temperature limit is inferred.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "label_replace(node_hwmon_temp_celsius{job=\"node\"} * on(job,instance,chip) group_left(chip_name) node_hwmon_chip_names{job=\"node\",chip_name=\"amdgpu\"} * on(job,instance,chip,sensor) group_left(label) node_hwmon_sensor_label{job=\"node\"}, \"pci_bdf\", \"$1.$2\", \"chip\", \".*_(0000:[0-9a-f]{2}:[0-9a-f]{2})_([0-7])\") and on(job,instance,pci_bdf) workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}} · {{label}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Reported board power",
+      "type": "timeseries",
+      "description": "Board sensor average. It excludes the rest of the workstation and is not wall power.",
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_gpu_power_average_watts{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Selected GPU core clock",
+      "type": "timeseries",
+      "description": "A selected DPM state is not proof of a sustained execution clock. Unavailable states are gaps.",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_gpu_core_clock_hertz{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "hertz",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Selected VRAM clock",
+      "type": "timeseries",
+      "description": "Reported memory DPM clock, not memory bandwidth.",
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_gpu_memory_clock_hertz{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "hertz",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Negotiated PCIe width",
+      "type": "stat",
+      "description": "Current negotiated lane width. Link speed/traffic and P2P correctness are separate checks.",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_gpu_pcie_width{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}}",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "title": "Available sensor channels",
+      "type": "table",
+      "description": "1 = this sampler could read the channel; 0 = channel unavailable. A readable channel does not establish sensor accuracy.",
+      "gridPos": {
+        "x": 6,
+        "y": 29,
+        "w": 18,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_gpu_sensor_available{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}} · {{sensor}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unavailable",
+                  "color": "text"
+                },
+                "1": {
+                  "text": "Readable",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "GPU identity",
+      "type": "table",
+      "description": "Stable PCI address and kernel GPU identity, not a permanent GPU index.",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "legendFormat": "{{pci_bdf}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    }
+  ]
+}

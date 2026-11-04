@@ -1,0 +1,19 @@
+---
+- name: Configure one Debian MicroServer storage and monitoring host
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  pre_tasks:
+    - name: Require the supported OS and explicit target classification
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') in ['dev', 'tst', 'int']
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: Select one explicitly mapped Debian 13 AMD64 MicroServer; this play never installs an OS or formats disks.
+      tags: [always]
+  roles:
+    - role: debian_microserver

@@ -1,0 +1,143 @@
+---
+- name: Require the reviewed pool identity and share ownership
+  ansible.builtin.assert:
+    that:
+      - microserver_pool_name is match('^[a-z][a-z0-9_-]{0,30}$')
+      - microserver_pool_guid | string is match('^[1-9][0-9]{7,19}$')
+      - microserver_share_uid | int > 0
+      - microserver_share_gid | int > 0
+      - microserver_nfs_clients | type_debug == 'list'
+      - microserver_nfs_clients | length > 0
+    fail_msg: Supply the existing owner-reviewed ZFS pool GUID, numeric non-root share UID/GID and exact private IPv4 clients.
+
+- name: Require individual private IPv4 NFS clients
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^(10[.](?:[0-9]{1,3}[.]){2}[0-9]{1,3}|192[.]168[.][0-9]{1,3}[.][0-9]{1,3}|172[.](?:1[6-9]|2[0-9]|3[01])[.][0-9]{1,3}[.][0-9]{1,3})$')
+      - item.split('.') | map('int') | max <= 255
+      - item.split('.') | map('int') | join('.') == item
+    fail_msg: NFS clients must be exact RFC1918 IPv4 addresses, never wildcard, subnet, public address or export options.
+  loop: '{{ microserver_nfs_clients }}'
+
+- name: Read the existing pool GUID without importing or creating a pool
+  ansible.builtin.command:
+    argv: [zpool, get, -H, -o, value, guid, '{{ microserver_pool_name }}']
+  register: microserver_actual_pool_guid
+  changed_when: false
+  check_mode: false
+
+- name: Require the exact owner-selected pool
+  ansible.builtin.assert:
+    that:
+      - microserver_actual_pool_guid.stdout | trim == microserver_pool_guid | string
+    fail_msg: Pool GUID differs from the reviewed configuration; no storage changes were made.
+
+- name: Read pool health
+  ansible.builtin.command:
+    argv: [zpool, list, -H, -o, health, '{{ microserver_pool_name }}']
+  register: microserver_pool_health
+  changed_when: false
+  check_mode: false
+
+- name: Require a healthy pool before configuration
+  ansible.builtin.assert:
+    that: [microserver_pool_health.stdout | trim == 'ONLINE']
+    fail_msg: Resolve the pool health problem with the owner before configuring shares.
+
+- name: Inspect the dedicated share dataset
+  ansible.builtin.command:
+    argv: [zfs, list, -H, -o, name, '{{ microserver_pool_name }}/shared']
+  register: microserver_dataset
+  changed_when: false
+  failed_when: microserver_dataset.rc not in [0, 1]
+  check_mode: false
+
+- name: Inspect share paths without following symlinks
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop: [/srv, /srv/microserver, /srv/microserver/shared, /etc/exports.d, /etc/nfs.conf.d]
+  register: microserver_share_paths
+
+- name: Refuse untrusted paths or an existing directory for a new dataset
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir | default(false) and not item.stat.islnk | default(false) and item.stat.mode is match('^[0-7]{2}[0145][0145]$') and (item.stat.uid == 0 or (item.item == '/srv/microserver/shared' and item.stat.uid == microserver_share_uid | int)))
+      - item.item != '/srv/microserver/shared' or not item.stat.exists or microserver_dataset.rc == 0
+    fail_msg: Refuse symlinks, untrusted directories or mounting a new dataset over existing files.
+  loop: '{{ microserver_share_paths.results }}'
+
+- name: Create only the missing dedicated share dataset
+  ansible.builtin.command:
+    argv: [zfs, create, -o, mountpoint=/srv/microserver/shared, -o, compression=lz4, -o, atime=off, '{{ microserver_pool_name }}/shared']
+  when: microserver_dataset.rc == 1
+
+- name: Read the actual dataset type, mountpoint and mounted state
+  ansible.builtin.command:
+    argv: [zfs, get, -H, -o, value, type,mountpoint,mounted, '{{ microserver_pool_name }}/shared']
+  register: microserver_dataset_properties
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode or microserver_dataset.rc == 0
+
+- name: Require the mounted dedicated dataset before touching its directory
+  ansible.builtin.assert:
+    that:
+      - microserver_dataset_properties.stdout_lines == ['filesystem', '/srv/microserver/shared', 'yes']
+    fail_msg: The share must be the selected mounted ZFS dataset; never create a fallback directory on the OS SSD.
+  when: not ansible_check_mode or microserver_dataset.rc == 0
+
+- name: Set ownership on the share root without changing existing files
+  ansible.builtin.file:
+    path: /srv/microserver/shared
+    state: directory
+    owner: '{{ microserver_share_uid }}'
+    group: '{{ microserver_share_gid }}'
+    mode: '0750'
+    follow: false
+  when: not ansible_check_mode or microserver_dataset.rc == 0
+
+- name: Create NFS configuration directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [/etc/exports.d, /etc/nfs.conf.d]
+
+- name: Restrict this fresh server to NFSv4 over TCP
+  ansible.builtin.copy:
+    dest: /etc/nfs.conf.d/90-microserver.conf
+    content: |
+      [nfsd]
+      vers2=n
+      vers3=n
+      vers4=y
+      udp=n
+      tcp=y
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart MicroServer NFS
+
+- name: Export only the mounted share to the selected clients
+  ansible.builtin.template:
+    src: exports.j2
+    dest: /etc/exports.d/microserver.exports
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart MicroServer NFS
+
+- name: Enable the configured NFS server
+  ansible.builtin.systemd_service:
+    name: nfs-kernel-server
+    enabled: true
+    state: started
+
+- name: Apply the storage configuration before staging monitoring
+  ansible.builtin.meta: flush_handlers

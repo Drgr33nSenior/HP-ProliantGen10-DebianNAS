@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "platform": "linux/amd64",
+  "status": "imported-pins-not-microserver-qualified",
+  "images": [
+    {
+      "component": "prometheus",
+      "version": "3.14.0",
+      "image": "docker.io/prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0",
+      "source": "https://github.com/prometheus/prometheus/releases/tag/v3.14.0"
+    },
+    {
+      "component": "grafana",
+      "version": "13.2.1",
+      "image": "docker.io/grafana/grafana:13.2.1@sha256:f772d434e8fab0049deb2b1b30abd43342bcfca1537614aa8d36080232cf4283",
+      "source": "https://github.com/grafana/grafana/releases/tag/v13.2.1"
+    },
+    {
+      "component": "alertmanager",
+      "version": "0.34.1",
+      "image": "docker.io/prom/alertmanager:v0.34.1@sha256:84967b9b7ba45e38a9278d3e594305f43d4993c310df3905b51138b816c365f3",
+      "source": "https://github.com/prometheus/alertmanager/releases/tag/v0.34.1"
+    }
+  ]
+}

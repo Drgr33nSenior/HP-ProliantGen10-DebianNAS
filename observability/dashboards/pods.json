@@ -1,0 +1,948 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "Overview",
+      "type": "link",
+      "url": "/d/workstation-overview",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Overview with the same time range"
+    },
+    {
+      "title": "Kubernetes",
+      "type": "link",
+      "url": "/d/workstation-kubernetes",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Kubernetes with the same time range"
+    },
+    {
+      "title": "Pods",
+      "type": "link",
+      "url": "/d/workstation-pods",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Pods with the same time range"
+    },
+    {
+      "title": "GPUs",
+      "type": "link",
+      "url": "/d/workstation-gpus",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open GPUs with the same time range"
+    },
+    {
+      "title": "Host",
+      "type": "link",
+      "url": "/d/workstation-host",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Host with the same time range"
+    },
+    {
+      "title": "Serving",
+      "type": "link",
+      "url": "/d/workstation-workloads",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Serving with the same time range"
+    },
+    {
+      "title": "Power",
+      "type": "link",
+      "url": "/d/workstation-power",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Power with the same time range"
+    },
+    {
+      "title": "Monitoring",
+      "type": "link",
+      "url": "/d/workstation-monitoring",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false,
+      "icon": "dashboard",
+      "tooltip": "Open Monitoring with the same time range"
+    }
+  ],
+  "tags": [
+    "workstation",
+    "kubernetes"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "uid": "workstation-pods",
+  "title": "Workstation / Kubernetes Pods",
+  "description": "Select a namespace and Pod to inspect readiness, failures, resources and throttling.",
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timepicker": {
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "label": "Kubernetes namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kube_pod_status_phase{job=\"kube-state-metrics\"}, namespace)",
+        "query": {
+          "query": "label_values(kube_pod_status_phase{job=\"kube-state-metrics\"}, namespace)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "phase",
+        "label": "Pod phase · defaults to active",
+        "type": "custom",
+        "query": "Pending,Running,Unknown,Succeeded,Failed",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "Pending",
+            "Running",
+            "Unknown"
+          ],
+          "value": [
+            "Pending",
+            "Running",
+            "Unknown"
+          ]
+        },
+        "options": [
+          {
+            "text": "Pending",
+            "value": "Pending",
+            "selected": true
+          },
+          {
+            "text": "Running",
+            "value": "Running",
+            "selected": true
+          },
+          {
+            "text": "Unknown",
+            "value": "Unknown",
+            "selected": true
+          },
+          {
+            "text": "Succeeded",
+            "value": "Succeeded",
+            "selected": false
+          },
+          {
+            "text": "Failed",
+            "value": "Failed",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "pod",
+        "label": "Pod",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\"}, pod)",
+        "query": {
+          "query": "label_values(kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\"}, pod)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Inspect Pods",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Choose a namespace and Pod. The phase filter defaults to **Pending, Running and Unknown**, so retained completed diagnostics do not flood current troubleshooting. Select **All** phases to inspect preserved history. A waiting-reason table with no rows is normal when no selected container is waiting; verify the collector is up before trusting empty results.\n\nCPU and memory show actual cgroup readings separately from declared regular-container requests/limits. Historical last-termination reasons can remain after recovery. **Arbitrary container logs and Kubernetes Events are not collected.**"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Selected Pods",
+      "type": "stat",
+      "description": "Number of Pods matching the namespace, name and phase filters.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"})",
+          "legendFormat": "Selected",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Container restarts · selected range",
+      "type": "stat",
+      "description": "Counter increases during the selected range, restricted to the current selected Pod identities. Too little history can produce no observation.",
+      "gridPos": {
+        "x": 6,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\"}[$__range]) and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1))",
+          "legendFormat": "Restarts",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Unschedulable Pods",
+      "type": "stat",
+      "description": "The scheduler reports this selected Pod unschedulable. Pending alone does not identify its cause.",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(kube_pod_status_unschedulable{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1))",
+          "legendFormat": "Unschedulable",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Object-state collector",
+      "type": "stat",
+      "description": "If this scrape is down, Pod state and empty tables cannot be treated as current health.",
+      "gridPos": {
+        "x": 18,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"kube-state-metrics\"}",
+          "legendFormat": "Scrape up",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Pod phases · current state",
+      "type": "table",
+      "description": "One row per selected Pod's current phase.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1",
+          "legendFormat": "{{namespace}} / {{pod}} · {{phase}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Pod readiness · current state",
+      "type": "table",
+      "description": "The condition label gives true/false/unknown. The numeric 1 identifies the active condition row.",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(kube_pod_status_ready{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\"} == 1) and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1)",
+          "legendFormat": "{{namespace}} / {{pod}} · {{condition}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Waiting containers · current reason",
+      "type": "table",
+      "description": "CrashLoopBackOff and ImagePullBackOff appear here when present. No rows can be normal; check collector health.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(kube_pod_container_status_waiting_reason{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1)) > 0",
+          "legendFormat": "{{namespace}} / {{pod}} / {{container}} · {{reason}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Last terminated reason · selected containers",
+      "type": "table",
+      "description": "Last known termination is historical and can persist after recovery. It is not necessarily a current crash.",
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(kube_pod_container_status_last_terminated_reason{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1)) > 0",
+          "legendFormat": "{{namespace}} / {{pod}} / {{container}} · {{reason}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "CPU use · actual cores",
+      "type": "timeseries",
+      "description": "Actual regular-container CPU usage rate from cAdvisor; not CPU requests or host total.",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(namespace,pod) (rate(container_cpu_usage_seconds_total{job=\"kubelet-cadvisor\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",container!=\"\",container!=\"POD\"}[$__rate_interval]) and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1))",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Memory · actual working set",
+      "type": "timeseries",
+      "description": "Observed cgroup working set, not requests/limits or physical per-process RAM.",
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(namespace,pod) (container_memory_working_set_bytes{job=\"kubelet-cadvisor\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",container!=\"\",container!=\"POD\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1))",
+          "legendFormat": "{{namespace}} / {{pod}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "CPU requests and limits",
+      "type": "timeseries",
+      "description": "Declared regular-container requests/limits; excludes init containers, Pod-level resources and overhead. A missing limit is not zero permitted CPU.",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(namespace,pod) (kube_pod_container_resource_requests{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",resource=\"cpu\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1))",
+          "legendFormat": "{{namespace}} / {{pod}} request",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "sum by(namespace,pod) (kube_pod_container_resource_limits{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",resource=\"cpu\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1))",
+          "legendFormat": "{{namespace}} / {{pod}} limit",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Memory requests and limits",
+      "type": "timeseries",
+      "description": "Declared regular-container budgets, separate from actual working set. Missing limits are not zero capacity.",
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(namespace,pod) (kube_pod_container_resource_requests{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",resource=\"memory\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1))",
+          "legendFormat": "{{namespace}} / {{pod}} request",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "sum by(namespace,pod) (kube_pod_container_resource_limits{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",resource=\"memory\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1))",
+          "legendFormat": "{{namespace}} / {{pod}} limit",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "CPU throttled periods",
+      "type": "timeseries",
+      "description": "Fraction of CFS periods throttled for each selected container. Missing CFS accounting is unavailable, not zero.",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rate(container_cpu_cfs_throttled_periods_total{job=\"kubelet-cadvisor\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",container!=\"\",container!=\"POD\"}[$__rate_interval]) / rate(container_cpu_cfs_periods_total{job=\"kubelet-cadvisor\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",container!=\"\",container!=\"POD\"}[$__rate_interval])) and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1)",
+          "legendFormat": "{{namespace}} / {{pod}} / {{container}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "GPU requests · selected Pods",
+      "type": "table",
+      "description": "Regular-container GPU requests; absent rows mean no matching declared requests, not device ownership or measured GPU activity.",
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "kube_pod_container_resource_requests{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",resource=\"amd_com_gpu\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1)",
+          "legendFormat": "{{namespace}} / {{pod}} / {{container}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    }
+  ]
+}

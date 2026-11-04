@@ -1,0 +1,6 @@
+---
+# Read the existing canonical locks; do not introduce another set of image pins.
+microserver_observability_lock: "{{ lookup('ansible.builtin.file', playbook_dir + '/../observability/versions.json') | from_json }}"
+microserver_prometheus_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'prometheus') | first).image }}"
+microserver_grafana_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'grafana') | first).image }}"
+microserver_alertmanager_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'alertmanager') | first).image }}"

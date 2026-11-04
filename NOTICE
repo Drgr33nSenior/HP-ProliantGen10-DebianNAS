@@ -1,0 +1,13 @@
+HP ProLiant Gen10 Debian NAS
+
+This repository retains its Apache License 2.0.
+
+The initial installer, validation tooling, image metadata and workstation
+dashboards were adapted from Drgr33nSenior/ArchLinuxThreadripper, whose MIT
+notice is retained in third-party-licenses/ArchLinuxThreadripper-MIT.txt.
+The source baseline was commit 04930cb811653f55b0fd338a1e06b7c017700d71
+plus the owner-requested Debian profile. The reviewed source export identity was
+cbd3a20c65d724955c838aa0ddef3253f0289fcafc5e68e60668c5d918b706e2.
+
+The Ubuntu MicroServer tutorial is referenced for hardware background only.
+No code from that project is incorporated here.

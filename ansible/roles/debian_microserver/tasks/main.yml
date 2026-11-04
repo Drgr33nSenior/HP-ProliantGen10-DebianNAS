@@ -1,0 +1,12 @@
+---
+- name: Bootstrap Debian packages
+  ansible.builtin.import_tasks: packages.yml
+  tags: [never, packages]
+
+- name: Configure the owner-selected storage pool
+  ansible.builtin.import_tasks: storage.yml
+  tags: [configure]
+
+- name: Stage and optionally start local monitoring
+  ansible.builtin.import_tasks: monitoring.yml
+  tags: [configure]

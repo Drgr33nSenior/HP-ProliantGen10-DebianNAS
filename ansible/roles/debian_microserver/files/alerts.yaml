@@ -1,0 +1,18 @@
+groups:
+  - name: microserver
+    rules:
+      - alert: MicroServerExporterMissing
+        expr: 'up{job="microserver-node"} == 0 or absent(up{job="microserver-node"})'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'MicroServer host metrics are unavailable'}
+      - alert: MicroServerMemoryLow
+        expr: 'node_memory_MemAvailable_bytes{job="microserver-node"} / node_memory_MemTotal_bytes{job="microserver-node"} < 0.1'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'MicroServer available memory below 10%'}
+      - alert: MicroServerFilesystemLow
+        expr: 'node_filesystem_avail_bytes{job="microserver-node",fstype=~"ext4|xfs|zfs|btrfs"} / node_filesystem_size_bytes{job="microserver-node",fstype=~"ext4|xfs|zfs|btrfs"} < 0.15'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'MicroServer filesystem free space below 15%'}

@@ -1,0 +1,8 @@
+---
+# Copy outside Git. Discover the actual GUID, client addresses and numeric IDs.
+microserver_pool_name: nas
+microserver_pool_guid: ''
+microserver_nfs_clients: []
+microserver_share_uid: 0
+microserver_share_gid: 0
+microserver_monitoring_enabled: false

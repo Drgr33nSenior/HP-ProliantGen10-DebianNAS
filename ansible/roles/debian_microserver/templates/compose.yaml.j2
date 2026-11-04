@@ -1,0 +1,81 @@
+# Linux host networking reaches the loopback-only native exporter. Every service
+# binds explicitly to loopback; this profile opens no LAN monitoring listener.
+services:
+  prometheus:
+    image: {{ microserver_prometheus_image }}
+    user: '65534:65534'
+    network_mode: host
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=14d
+      - --storage.tsdb.retention.size=24GB
+      - --web.listen-address=127.0.0.1:9090
+      - --web.enable-remote-write-receiver
+      - --query.max-concurrency=4
+      - --query.timeout=30s
+    environment: {GOMEMLIMIT: 1228MiB}
+    volumes:
+      - /etc/microserver/monitoring/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - /etc/microserver/monitoring/alerts.yaml:/etc/prometheus/alerts.yaml:ro
+      - /var/lib/microserver/prometheus:/prometheus
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cpus: 1.0
+    pids_limit: 256
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+  grafana:
+    image: {{ microserver_grafana_image }}
+    user: '472:472'
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
+      GF_METRICS_ENABLED: 'true'
+    volumes:
+      - /etc/microserver/private/grafana-admin-password:/run/secrets/grafana-admin-password:ro
+      - /etc/microserver/monitoring/provisioning:/etc/grafana/provisioning:ro
+      - /etc/microserver/monitoring/dashboards:/var/lib/grafana/dashboards:ro
+      - /var/lib/microserver/grafana:/var/lib/grafana
+    tmpfs: [/tmp:size=64m,mode=1777]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+    pids_limit: 256
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+  alertmanager:
+    image: {{ microserver_alertmanager_image }}
+    user: '65534:65534'
+    network_mode: host
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yaml
+      - --storage.path=/alertmanager
+      - --web.listen-address=127.0.0.1:9093
+      - --cluster.listen-address=
+      - --data.retention=120h
+      - --log.level=error
+    volumes:
+      - /etc/microserver/monitoring/alertmanager.yaml:/etc/alertmanager/alertmanager.yaml:ro
+      - /var/lib/microserver/alertmanager:/alertmanager
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.25
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}

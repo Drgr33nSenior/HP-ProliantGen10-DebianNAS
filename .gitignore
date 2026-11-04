@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+test-results/
+.private/
+ansible/inventory.local.ini
+ansible/*.local.yml
+*.credential
+*.cred
+*.key
+*.pem
+*.p12
+*.pfx
+*.kubeconfig
