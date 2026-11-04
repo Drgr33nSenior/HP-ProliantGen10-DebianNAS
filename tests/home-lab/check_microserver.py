@@ -2,7 +2,10 @@
 import copy
 import configparser
 import json
+import os
 import re
+import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -175,6 +178,27 @@ class MicroServerTests(unittest.TestCase):
         for change in [dict(microserver_environment='prd'), dict(microserver_environment='unmapped'),
                        dict(ansible_play_hosts_all=['nas', 'workstation'])]:
             self.assertFalse(assertions(task, dict(valid, **change)))
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'Ansible is required to inspect task selection')
+    def test_independent_commissioning_does_not_select_storage_tasks(self):
+        command = ['ansible-playbook', '-i', 'ansible/microserver.inventory.example.ini',
+                   '--list-tasks', 'ansible/microserver.yml', '--tags']
+        environment = dict(os.environ, ANSIBLE_NOCOLOR='1')
+        selected = subprocess.run(command + ['packages,host,tuning,monitoring'],
+                                  cwd=ROOT, env=environment,
+                                  capture_output=True, text=True, timeout=30)
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        for task in self.storage:
+            self.assertNotIn(task['name'], selected.stdout)
+        for name in ['packages', 'host', 'tuning', 'monitoring']:
+            for task in read_yaml(ROLE / f'tasks/{name}.yml'):
+                self.assertIn(task['name'], selected.stdout)
+        configured = subprocess.run(command + ['configure'],
+                                    cwd=ROOT, env=environment,
+                                    capture_output=True, text=True, timeout=30)
+        self.assertEqual(configured.returncode, 0, configured.stderr)
+        for task in self.storage:
+            self.assertIn(task['name'], configured.stdout)
 
     def test_required_identity_and_clients(self):
         self.assertTrue(assertions(self.storage[0], self.context))

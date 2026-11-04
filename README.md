@@ -135,6 +135,15 @@ part of normal configure. Actual TuneD selection, CPU frequency-policy availabil
 and the effective governor on every policy must pass verification. See the
 [performance-mode procedure](docs/HOST-TOOLS.md#performance-mode).
 
+To install the remaining packages and stage SSD-hosted monitoring while disk
+tests run, use `--tags packages,host,tuning,monitoring` with the same reviewed
+inventory and variables. This selection configures time sync, interrupt balancing
+and CPU policy, and stages monitoring without selecting storage tasks. Keep
+`microserver_monitoring_enabled: false` until the owner prepares the Grafana
+credential. Then use `--tags monitoring` with that variable set to `true` to
+activate monitoring independently of pool creation. The full `configure` stage
+retains its storage checks before configuring NFS and monitoring.
+
 ## 3. Create and record the data pool locally
 
 Pool creation is an owner-controlled destructive step on the MicroServer.

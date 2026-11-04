@@ -9,7 +9,7 @@
 
 - name: Configure lightweight host services
   ansible.builtin.import_tasks: host.yml
-  tags: [configure]
+  tags: [configure, host]
 
 - name: Configure TuneD CPU performance
   ansible.builtin.import_tasks: tuning.yml
@@ -17,4 +17,4 @@
 
 - name: Stage and optionally start local monitoring
   ansible.builtin.import_tasks: monitoring.yml
-  tags: [configure]
+  tags: [configure, monitoring]
