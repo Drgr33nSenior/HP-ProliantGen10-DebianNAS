@@ -45,6 +45,12 @@
     that: [microserver_pool_health.stdout | trim == 'ONLINE']
     fail_msg: Resolve the pool health problem with the owner before configuring shares.
 
+- name: Start the ZFS event daemon for the verified pool
+  ansible.builtin.systemd_service:
+    name: zfs-zed
+    enabled: true
+    state: started
+
 - name: Inspect the dedicated share dataset
   ansible.builtin.command:
     argv: [zfs, list, -H, -o, name, '{{ microserver_pool_name }}/shared']

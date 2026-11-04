@@ -184,7 +184,9 @@ Do not use force flags, automatic pool import, broad disk selectors or a copied
 
 Record the pool name, `zpool get -H -o value guid POOL`, `zpool status -P POOL`
 and the disk identities privately. The role requires the exact configured GUID
-and an `ONLINE` pool. It creates only the missing `POOL/shared` dataset, with
+and an `ONLINE` pool. After those checks, it enables and starts the installed
+ZFS event daemon (`zfs-zed`); package installation alone suppresses service starts.
+It creates only the missing `POOL/shared` dataset, with
 LZ4 compression and `/srv/microserver/shared` as its mountpoint. An existing
 directory at that path blocks dataset creation. An existing dataset must already
 be mounted at the exact expected path; the role does not force-mount it.
