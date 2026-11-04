@@ -24,3 +24,15 @@ scrape_configs:
     scrape_interval: 60s
     static_configs:
       - targets: ['127.0.0.1:8687']
+{% if microserver_unifi_metrics_enabled | bool %}
+  - job_name: microserver-unifi
+    scrape_interval: 60s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['127.0.0.1:9130']
+    # Store the metrics used by the overview, not per-client or DPI series.
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        action: keep
+        regex: 'unifipoller_(controller_up|prometheus_cache_age_seconds|prometheus_refresh_failures_total|device_(cpu_utilization_ratio|memory_utilization_ratio|temperature_celsius|uptime_seconds|wan_(receive_bytes_total|transmit_bytes_total|latency_seconds|status)))'
+{% endif %}

@@ -46,7 +46,7 @@ services:
     volumes:
       - /etc/microserver/private/grafana-admin-password:/run/secrets/grafana-admin-password:ro
       - /etc/microserver/monitoring/provisioning:/etc/grafana/provisioning:ro
-      - /etc/microserver/monitoring/dashboards:/var/lib/grafana/dashboards:ro
+      - /etc/microserver/monitoring/dashboard-folders:/var/lib/grafana/dashboards:ro
       - /var/lib/microserver/grafana:/var/lib/grafana
     tmpfs: ['/tmp:size=64m,mode=1777']
     mem_limit: 2048m
@@ -117,3 +117,34 @@ services:
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
     logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+{% if microserver_unifi_metrics_enabled | bool %}
+  unpoller:
+    image: {{ microserver_unpoller_image }}
+    user: '65534:65534'
+    network_mode: host
+    command: [--config, /etc/unpoller/up.conf]
+{% if microserver_unifi_controller_ip | length > 0 %}
+    extra_hosts:
+      - '{{ microserver_unifi_controller_url | urlsplit("hostname") }}:{{ microserver_unifi_controller_ip }}'
+{% endif %}
+    environment:
+      GOMEMLIMIT: 192MiB
+{% if microserver_unifi_custom_ca | bool %}
+      SSL_CERT_FILE: /run/secrets/unifi-ca.pem
+{% endif %}
+    volumes:
+      - /etc/microserver/monitoring/unpoller.conf:/etc/unpoller/up.conf:ro
+      - /etc/microserver/private/unifi-credential:/run/secrets/unifi-credential:ro
+{% if microserver_unifi_custom_ca | bool %}
+      - /etc/microserver/private/unifi-ca.pem:/run/secrets/unifi-ca.pem:ro
+{% endif %}
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.1
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+{% endif %}

@@ -1,0 +1,108 @@
+{
+  "uid": "network-overview",
+  "title": "Network overview",
+  "description": "WAN and device performance require gateway API polling. NAS link metrics are collected locally. Missing measurements remain No data rather than reporting a healthy zero.",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["network", "unifi"],
+  "refresh": "1m",
+  "time": {"from": "now-1h", "to": "now"},
+  "links": [{"title": "UniFi events", "type": "link", "url": "/d/unifi-logs", "includeVars": false, "keepTime": true}],
+  "panels": [
+    {
+      "id": 1, "title": "Gateway polling", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "fieldConfig": {"defaults": {"unit": "short", "noValue": "No data", "mappings": [{"type": "value", "options": {"0": {"text": "Failed", "color": "red"}, "1": {"text": "Healthy", "color": "green"}}}]}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "min(unifipoller_controller_up{job=\"microserver-unifi\"})", "instant": true, "range": false}]
+    },
+    {
+      "id": 2, "title": "Gateway sample age", "type": "stat",
+      "description": "Age of the last successful background collection. A healthy HTTP scrape alone does not prove current gateway data.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "fieldConfig": {"defaults": {"unit": "s", "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 180}]}}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "max(unifipoller_prometheus_cache_age_seconds{job=\"microserver-unifi\"})", "instant": true, "range": false}]
+    },
+    {
+      "id": 3, "title": "WAN status", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "fieldConfig": {"defaults": {"unit": "short", "noValue": "No data", "mappings": [{"type": "value", "options": {"0": {"text": "Offline", "color": "red"}, "1": {"text": "Online", "color": "green"}}}]}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "max by (name, wan_networkgroup) (unifipoller_device_wan_status{job=\"microserver-unifi\"})", "legendFormat": "{{name}} {{wan_networkgroup}}", "instant": true, "range": false}]
+    },
+    {
+      "id": 4, "title": "Device uptime", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "fieldConfig": {"defaults": {"unit": "s", "noValue": "No data"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "max by (name, type) (unifipoller_device_uptime_seconds{job=\"microserver-unifi\"})", "legendFormat": "{{name}} {{type}}", "instant": true, "range": false}]
+    },
+    {
+      "id": 5, "title": "WAN traffic", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 4, "w": 16, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "bps", "min": 0}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "8 * sum by (name, port) (rate(unifipoller_device_wan_receive_bytes_total{job=\"microserver-unifi\"}[5m]))", "legendFormat": "{{name}} {{port}} download", "instant": false, "range": true},
+        {"refId": "B", "expr": "8 * sum by (name, port) (rate(unifipoller_device_wan_transmit_bytes_total{job=\"microserver-unifi\"}[5m]))", "legendFormat": "{{name}} {{port}} upload", "instant": false, "range": true}
+      ]
+    },
+    {
+      "id": 6, "title": "WAN latency", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 16, "y": 4, "w": 8, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "max by (name, port) (unifipoller_device_wan_latency_seconds{job=\"microserver-unifi\"})", "legendFormat": "{{name}} {{port}}", "instant": false, "range": true}]
+    },
+    {
+      "id": 7, "title": "Device CPU", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 12, "w": 8, "h": 7},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "100 * max by (name, type) (unifipoller_device_cpu_utilization_ratio{job=\"microserver-unifi\"})", "legendFormat": "{{name}} {{type}}", "instant": false, "range": true}]
+    },
+    {
+      "id": 8, "title": "Device memory", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 8, "y": 12, "w": 8, "h": 7},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "100 * max by (name, type) (unifipoller_device_memory_utilization_ratio{job=\"microserver-unifi\"})", "legendFormat": "{{name}} {{type}}", "instant": false, "range": true}]
+    },
+    {
+      "id": 9, "title": "Device temperatures", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 16, "y": 12, "w": 8, "h": 7},
+      "fieldConfig": {"defaults": {"unit": "celsius"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "max by (name, temp_area) (unifipoller_device_temperature_celsius{job=\"microserver-unifi\"})", "legendFormat": "{{name}} {{temp_area}}", "instant": false, "range": true}]
+    },
+    {
+      "id": 10, "title": "NAS link speed", "type": "stat",
+      "description": "Negotiated link speed reported by the NAS driver; this is not measured throughput.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 0, "y": 19, "w": 6, "h": 5},
+      "fieldConfig": {"defaults": {"unit": "bps", "noValue": "No data"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "8 * node_network_speed_bytes{job=\"microserver-node\",device!~\"lo|docker.*|veth.*|br-.*\"}", "legendFormat": "{{device}}", "instant": true, "range": false}]
+    },
+    {
+      "id": 11, "title": "NAS interface traffic", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 6, "y": 19, "w": 12, "h": 7},
+      "fieldConfig": {"defaults": {"unit": "bps", "min": 0}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "8 * rate(node_network_receive_bytes_total{job=\"microserver-node\",device!~\"lo|docker.*|veth.*|br-.*\"}[5m])", "legendFormat": "{{device}} receive", "instant": false, "range": true},
+        {"refId": "B", "expr": "8 * rate(node_network_transmit_bytes_total{job=\"microserver-node\",device!~\"lo|docker.*|veth.*|br-.*\"}[5m])", "legendFormat": "{{device}} transmit", "instant": false, "range": true}
+      ]
+    },
+    {
+      "id": 12, "title": "NAS interface errors and drops", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"x": 18, "y": 19, "w": 6, "h": 7},
+      "fieldConfig": {"defaults": {"unit": "pps", "min": 0}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "rate(node_network_receive_errs_total{job=\"microserver-node\",device!~\"lo|docker.*|veth.*|br-.*\"}[5m]) + rate(node_network_transmit_errs_total{job=\"microserver-node\",device!~\"lo|docker.*|veth.*|br-.*\"}[5m])", "legendFormat": "{{device}} errors", "instant": false, "range": true},
+        {"refId": "B", "expr": "rate(node_network_receive_drop_total{job=\"microserver-node\",device!~\"lo|docker.*|veth.*|br-.*\"}[5m]) + rate(node_network_transmit_drop_total{job=\"microserver-node\",device!~\"lo|docker.*|veth.*|br-.*\"}[5m])", "legendFormat": "{{device}} drops", "instant": false, "range": true}
+      ]
+    }
+  ]
+}

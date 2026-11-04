@@ -9,8 +9,9 @@ event counts and severity/application views. Prometheus monitors both services.
 
 UniFi's SIEM export covers system, security, connectivity and administrative
 events. It complements performance polling; it does not replace continuous
-CPU, memory, temperature and bandwidth measurements. UnPoller remains the
-planned collector for those measurements after controller/API qualification.
+CPU, memory, temperature and bandwidth measurements. The optional
+[UnPoller collector and Network overview](NETWORK-MONITORING.md) supply those
+measurements after controller/API qualification.
 See [UniFi system logs and SIEM integration](https://help.ui.com/hc/en-us/articles/33349041044119-UniFi-System-Logs-SIEM-Integration)
 and [UnPoller's controller support](https://unpoller.com/docs/install/controllerlogin/).
 
@@ -46,8 +47,7 @@ measuring volume; per-flow traffic export needs a separate capacity review.
 
 Vector supplies only the bounded `job`, `product` and `severity` labels. Loki
 can add a bounded `service_name` label and detected log-level structured metadata.
-Client
-addresses, MAC addresses, usernames, event IDs and messages stay in the record
+Client addresses, MAC addresses, usernames, event IDs and messages stay in the record
 body. Grafana can inspect them at query time without creating a stream for each
 client or event. Log records can contain private activity; retain them within
 the existing owner-controlled Grafana and NAS access boundaries.
@@ -93,7 +93,7 @@ remains available until its retention policy removes it.
 
 1. Confirm Loki and Vector readiness, their configured limits and the expected
    loopback listeners. UDP 1514 must bind only to the selected NAS address.
-2. Send a gateway test event. Open **Infrastructure / UniFi events** in Grafana,
+2. Send a gateway test event. Open **Network / UniFi events** in Grafana,
    or query Loki in Explore with `{job="unifi"}`. Expand a record to inspect
    `cef`, `cef_parsed`, `product` and `severity`.
 3. Verify both expected CEF records and unparsed records where applicable.

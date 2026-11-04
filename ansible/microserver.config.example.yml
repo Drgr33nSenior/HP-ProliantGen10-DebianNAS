@@ -15,3 +15,10 @@ microserver_dimm_limits_enabled: false
 microserver_unifi_syslog_enabled: false
 microserver_unifi_gateway_ip: ''
 microserver_unifi_syslog_listen_ip: ''
+# Performance polling is separate from SIEM logs. Prepare credentials on the NAS.
+microserver_unifi_metrics_enabled: false
+microserver_unifi_controller_url: ''  # HTTPS URL whose certificate is trusted.
+microserver_unifi_controller_ip: ''   # Optional private IPv4 alias for that hostname.
+microserver_unifi_auth_method: api_key  # Or password for a local read-only account.
+microserver_unifi_username: ''  # Required only with password authentication.
+microserver_unifi_custom_ca: false  # Use the owner-verified unifi-ca.pem if needed.

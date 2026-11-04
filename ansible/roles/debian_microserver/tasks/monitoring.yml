@@ -31,7 +31,9 @@
     - {path: /etc/microserver/monitoring/provisioning, uid: 0}
     - {path: /etc/microserver/monitoring/provisioning/datasources, uid: 0}
     - {path: /etc/microserver/monitoring/provisioning/dashboards, uid: 0}
-    - {path: /etc/microserver/monitoring/dashboards, uid: 0}
+    - {path: /etc/microserver/monitoring/dashboard-folders, uid: 0}
+    - {path: /etc/microserver/monitoring/dashboard-folders/Infrastructure, uid: 0}
+    - {path: /etc/microserver/monitoring/dashboard-folders/Network, uid: 0}
     - {path: /var/lib/microserver, uid: 0}
     - {path: /var/lib/microserver/prometheus, uid: 65534}
     - {path: /var/lib/microserver/grafana, uid: 472}
@@ -62,6 +64,9 @@
     - /etc/microserver/monitoring/provisioning
     - /etc/microserver/monitoring/provisioning/datasources
     - /etc/microserver/monitoring/provisioning/dashboards
+    - /etc/microserver/monitoring/dashboard-folders
+    - /etc/microserver/monitoring/dashboard-folders/Infrastructure
+    - /etc/microserver/monitoring/dashboard-folders/Network
     - /var/lib/microserver
     - /var/lib/microserver/node-exporter
     - /usr/local/libexec
@@ -141,7 +146,7 @@
 - name: Reuse the canonical dashboards without copying a second maintained source
   ansible.builtin.copy:
     src: '{{ playbook_dir }}/../observability/dashboards/'
-    dest: /etc/microserver/monitoring/dashboards/
+    dest: /etc/microserver/monitoring/dashboard-folders/Infrastructure/
     owner: root
     group: root
     mode: '0644'
@@ -151,7 +156,7 @@
 - name: Add the NAS dashboard to the shared dashboard folder
   ansible.builtin.copy:
     src: microserver-dashboard.json
-    dest: /etc/microserver/monitoring/dashboards/microserver.json
+    dest: /etc/microserver/monitoring/dashboard-folders/Infrastructure/microserver.json
     owner: root
     group: root
     mode: '0644'
@@ -160,10 +165,94 @@
 - name: Add the UniFi events dashboard
   ansible.builtin.copy:
     src: unifi-logs-dashboard.json
-    dest: /etc/microserver/monitoring/dashboards/unifi-logs.json
+    dest: /etc/microserver/monitoring/dashboard-folders/Network/unifi-logs.json
     owner: root
     group: root
     mode: '0644'
+  notify: Reload MicroServer monitoring
+
+- name: Add the network overview dashboard
+  ansible.builtin.copy:
+    src: network-dashboard.json
+    dest: /etc/microserver/monitoring/dashboard-folders/Network/overview.json
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer monitoring
+
+- name: Require explicit HTTPS controller settings for performance polling
+  ansible.builtin.assert:
+    that:
+      - microserver_unifi_controller_url is string
+      - microserver_unifi_controller_url is match('^https://[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::443)?/?$')
+      - microserver_unifi_controller_url | trim == microserver_unifi_controller_url
+      - microserver_unifi_auth_method in ['api_key', 'password']
+      - microserver_unifi_auth_method != 'password' or (microserver_unifi_username is string and microserver_unifi_username | length > 0)
+    fail_msg: Select an owner-verified HTTPS controller URL, a local API key or read-only account, and a username for password authentication.
+  when: microserver_unifi_metrics_enabled | bool
+
+- name: Validate an optional private controller hostname alias
+  ansible.builtin.assert:
+    that:
+      - microserver_unifi_controller_ip is string
+      - microserver_unifi_controller_ip is match('^(10[.](?:[0-9]{1,3}[.]){2}[0-9]{1,3}|192[.]168[.][0-9]{1,3}[.][0-9]{1,3}|172[.](?:1[6-9]|2[0-9]|3[01])[.][0-9]{1,3}[.][0-9]{1,3})$')
+      - microserver_unifi_controller_ip.split('.') | map('int') | max <= 255
+      - microserver_unifi_controller_ip.split('.') | map('int') | join('.') == microserver_unifi_controller_ip
+    fail_msg: An optional controller hostname alias requires an exact private IPv4 address.
+  when: microserver_unifi_metrics_enabled | bool and microserver_unifi_controller_ip | length > 0
+
+- name: Inspect only owner-prepared UniFi credential metadata
+  ansible.builtin.stat:
+    path: /etc/microserver/private/unifi-credential
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_unifi_credential
+  when: microserver_unifi_metrics_enabled | bool
+
+- name: Require a private UniFi credential without reading it
+  ansible.builtin.assert:
+    that:
+      - microserver_unifi_credential.stat.exists
+      - microserver_unifi_credential.stat.isreg | default(false)
+      - not microserver_unifi_credential.stat.islnk | default(false)
+      - microserver_unifi_credential.stat.uid == 0
+      - microserver_unifi_credential.stat.gid == 65534
+      - microserver_unifi_credential.stat.mode == '0440'
+      - microserver_unifi_credential.stat.size > 0
+    fail_msg: Prepare the UniFi credential on the NAS as documented; this play never reads it.
+  when: microserver_unifi_metrics_enabled | bool
+
+- name: Inspect only optional UniFi CA metadata
+  ansible.builtin.stat:
+    path: /etc/microserver/private/unifi-ca.pem
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_unifi_ca
+  when: microserver_unifi_metrics_enabled | bool and microserver_unifi_custom_ca | bool
+
+- name: Require a protected owner-verified CA file
+  ansible.builtin.assert:
+    that:
+      - microserver_unifi_ca.stat.exists
+      - microserver_unifi_ca.stat.isreg | default(false)
+      - not microserver_unifi_ca.stat.islnk | default(false)
+      - microserver_unifi_ca.stat.uid == 0
+      - microserver_unifi_ca.stat.gid == 65534
+      - microserver_unifi_ca.stat.mode == '0440'
+      - microserver_unifi_ca.stat.size > 0
+    fail_msg: Prepare the public CA chain locally after owner verification; TLS verification stays enabled.
+  when: microserver_unifi_metrics_enabled | bool and microserver_unifi_custom_ca | bool
+
+- name: Render the nonsecret UniFi polling configuration
+  ansible.builtin.template:
+    src: unpoller.conf.j2
+    dest: /etc/microserver/monitoring/unpoller.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: microserver_unifi_metrics_enabled | bool
   notify: Reload MicroServer monitoring
 
 - name: Bind the Debian node exporter to loopback
@@ -259,6 +348,19 @@
 - name: Apply pending service configuration before readiness checks
   ansible.builtin.meta: flush_handlers
 
+- name: Find only the optional collector when polling is disabled
+  ansible.builtin.command:
+    argv: [/usr/bin/docker, ps, --quiet, --filter, 'label=com.docker.compose.project=microserver', --filter, 'label=com.docker.compose.service=unpoller']
+  register: microserver_unifi_running
+  changed_when: false
+  when: microserver_monitoring_enabled | bool and not microserver_unifi_metrics_enabled | bool and not ansible_check_mode
+
+- name: Stop the optional collector after polling is disabled
+  ansible.builtin.command:
+    argv: [/usr/bin/docker, stop, --time, '30', '{{ item }}']
+  loop: '{{ microserver_unifi_running.stdout_lines | default([]) }}'
+  when: microserver_monitoring_enabled | bool and not microserver_unifi_metrics_enabled | bool and not ansible_check_mode
+
 - name: Collect an initial Docker metrics snapshot after explicit activation
   ansible.builtin.systemd_service:
     name: microserver-docker-metrics.service
@@ -305,3 +407,15 @@
   retries: 12
   delay: 5
   when: microserver_monitoring_enabled | bool and not ansible_check_mode
+
+- name: Check the optional UniFi exporter endpoint
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9130/metrics
+    return_content: false
+    status_code: 200
+    timeout: 5
+  register: microserver_unifi_readiness
+  until: microserver_unifi_readiness.status | default(0) == 200
+  retries: 12
+  delay: 5
+  when: microserver_monitoring_enabled | bool and microserver_unifi_metrics_enabled | bool and not ansible_check_mode

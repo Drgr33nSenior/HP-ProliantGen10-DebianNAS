@@ -6,3 +6,4 @@ microserver_grafana_image: "{{ (microserver_observability_lock.images | selectat
 microserver_alertmanager_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'alertmanager') | first).image }}"
 microserver_loki_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'loki') | first).image }}"
 microserver_vector_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'vector') | first).image }}"
+microserver_unpoller_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'unpoller') | first).image }}"

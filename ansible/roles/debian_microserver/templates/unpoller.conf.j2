@@ -1,0 +1,45 @@
+[poller]
+quiet = true
+debug = false
+
+[prometheus]
+disable = false
+namespace = "unifipoller"
+http_listen = "127.0.0.1:9130"
+interval = "60s"
+report_errors = false
+dead_ports = false
+
+[influxdb]
+disable = true
+
+[loki]
+disable = true
+
+[unifi]
+dynamic = false
+remote = false
+
+[unifi.defaults]
+url = {{ microserver_unifi_controller_url | to_json }}
+verify_ssl = true
+timeout = "10s"
+save_sites = true
+save_dpi = false
+save_traffic = false
+save_rogue = false
+save_speedtest = false
+save_ids = false
+save_events = false
+save_alarms = false
+save_anomalies = false
+save_syslog = false
+save_protect_logs = false
+save_protect_devices = false
+skip_device_tags = true
+{% if microserver_unifi_auth_method == 'api_key' %}
+api_key = "file:///run/secrets/unifi-credential"
+{% else %}
+user = {{ microserver_unifi_username | to_json }}
+pass = "file:///run/secrets/unifi-credential"
+{% endif %}

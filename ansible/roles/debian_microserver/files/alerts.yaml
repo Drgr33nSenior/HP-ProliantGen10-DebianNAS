@@ -26,3 +26,8 @@ groups:
         for: 5m
         labels: {severity: warning}
         annotations: {summary: 'MicroServer log storage or receiver is unavailable'}
+      - alert: MicroServerUniFiPollingUnavailable
+        expr: 'up{job="microserver-unifi"} == 0 or unifipoller_controller_up{job="microserver-unifi"} == 0 or unifipoller_prometheus_cache_age_seconds{job="microserver-unifi"} > 180'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'UniFi gateway performance polling is unavailable or stale'}

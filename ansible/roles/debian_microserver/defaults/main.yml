@@ -10,3 +10,9 @@ microserver_dimm_limits_enabled: false
 microserver_unifi_syslog_enabled: false
 microserver_unifi_gateway_ip: ''
 microserver_unifi_syslog_listen_ip: ''
+microserver_unifi_metrics_enabled: false
+microserver_unifi_controller_url: ''
+microserver_unifi_controller_ip: ''
+microserver_unifi_auth_method: api_key
+microserver_unifi_username: ''
+microserver_unifi_custom_ca: false

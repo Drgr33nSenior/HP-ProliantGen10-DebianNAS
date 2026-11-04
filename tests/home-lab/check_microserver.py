@@ -12,7 +12,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import unittest
+import urllib.parse
 from unittest import mock
 from pathlib import Path
 
@@ -27,6 +29,8 @@ ENV.tests['match'] = lambda value, pattern: re.match(pattern, str(value)) is not
 ENV.filters['type_debug'] = lambda value: type(value).__name__
 ENV.filters['bool'] = lambda value: value is True or str(value).lower() in ('true', 'yes', '1')
 ENV.filters['from_json'] = json.loads
+ENV.filters['to_json'] = json.dumps
+ENV.filters['urlsplit'] = lambda value, key: getattr(urllib.parse.urlsplit(value), key)
 ENV.filters['from_yaml_all'] = lambda value: list(yaml.safe_load_all(value))
 ENV.filters['dict2items'] = lambda value: [dict(key=key, value=item) for key, item in value.items()]
 
@@ -391,6 +395,127 @@ class MicroServerTests(unittest.TestCase):
         for name in ['metrics', 'logs']:
             datasource = read_yaml(ROOT / f'observability/config/datasources.{name}.yaml')['datasources'][0]
             self.assertIn(datasource['uid'], ['prometheus', 'loki'])
+
+    def test_network_folder_keeps_provider_and_uids_without_legacy_duplicates(self):
+        provider = read_yaml(ROOT / 'observability/config/dashboards.yaml')['providers'][0]
+        self.assertEqual(provider['name'], 'workstation')
+        self.assertNotIn('folder', provider)
+        self.assertNotIn('folderUid', provider)
+        self.assertTrue(provider['disableDeletion'])
+        self.assertTrue(provider['options']['foldersFromFilesStructure'])
+        self.assertGreater(provider['updateIntervalSeconds'], 10)
+        compose = yaml.safe_load(ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(**self.context))
+        mounts = compose['services']['grafana']['volumes']
+        self.assertIn('/etc/microserver/monitoring/dashboard-folders:/var/lib/grafana/dashboards:ro', mounts)
+        self.assertFalse(any(value.startswith('/etc/microserver/monitoring/dashboards:') for value in mounts))
+        destinations = {task['ansible.builtin.copy'].get('src'): task['ansible.builtin.copy']['dest']
+                        for task in self.monitoring if 'ansible.builtin.copy' in task and 'src' in task['ansible.builtin.copy']}
+        self.assertIn('/Infrastructure/', destinations['microserver-dashboard.json'])
+        self.assertIn('/Network/', destinations['unifi-logs-dashboard.json'])
+        self.assertIn('/Network/', destinations['network-dashboard.json'])
+        self.assertEqual(json.loads((ROLE / 'files/unifi-logs-dashboard.json').read_text())['uid'], 'unifi-logs')
+
+    def test_unifi_poller_is_opt_in_with_private_files_verified_tls_and_bounded_metrics(self):
+        template = ENV.from_string((ROLE / 'templates/unpoller.conf.j2').read_text())
+        endpoint = next(task for task in self.monitoring if task['name'].startswith('Require explicit HTTPS controller'))
+        context = dict(self.context, microserver_unifi_metrics_enabled=True,
+                       microserver_unifi_controller_url='https://gateway.home.arpa',
+                       microserver_unifi_username='monitoring')
+        self.assertTrue(assertions(endpoint, context))
+        for url in ['', 'http://gateway.home.arpa', 'https://user:password@gateway.home.arpa',
+                    'https://gateway.home.arpa/path', 'https://gateway.home.arpa\n']:
+            self.assertFalse(assertions(endpoint, dict(context, microserver_unifi_controller_url=url)))
+        self.assertFalse(assertions(endpoint, dict(context, microserver_unifi_auth_method='unsupported')))
+        self.assertFalse(assertions(endpoint, dict(context, microserver_unifi_auth_method='password', microserver_unifi_username='')))
+        for method in ['api_key', 'password']:
+            context['microserver_unifi_auth_method'] = method
+            config = tomllib.loads(str(template.render(**context)))
+            self.assertTrue(config['unifi']['defaults']['verify_ssl'])
+            field = 'api_key' if method == 'api_key' else 'pass'
+            self.assertEqual(config['unifi']['defaults'][field], 'file:///run/secrets/unifi-credential')
+            self.assertEqual(config['prometheus']['http_listen'], '127.0.0.1:9130')
+            self.assertEqual(config['prometheus']['interval'], '60s')
+            self.assertTrue(config['unifi']['defaults']['skip_device_tags'])
+            self.assertFalse(config['unifi']['defaults']['save_dpi'])
+            self.assertTrue(config['influxdb']['disable'])
+            self.assertTrue(config['loki']['disable'])
+        compose = yaml.safe_load(ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(**context))
+        self.assertEqual(compose['services']['unpoller']['image'], self.context['microserver_unpoller_image'])
+        self.assertLessEqual(sum(Decimal(str(service['cpus'])) for service in compose['services'].values()), Decimal('1.5'))
+        self.assertLessEqual(sum(int(service['mem_limit'].removesuffix('m')) for service in compose['services'].values()), 5888)
+        self.assertEqual(compose['services']['unpoller']['mem_limit'], '256m')
+        self.assertTrue(compose['services']['unpoller']['read_only'])
+        self.assertEqual(compose['services']['unpoller']['cap_drop'], ['ALL'])
+        self.assertEqual(compose['services']['unpoller']['security_opt'], ['no-new-privileges:true'])
+        self.assertNotIn('unifi-credential', str(compose['services']['unpoller']['environment']))
+        custom = tomllib.loads(str(template.render(**dict(context, microserver_unifi_custom_ca=True))))
+        self.assertNotIn('ssl_cert_paths', custom['unifi']['defaults'])
+        custom_compose = yaml.safe_load(ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(
+            **dict(context, microserver_unifi_custom_ca=True)))
+        self.assertEqual(custom_compose['services']['unpoller']['environment']['SSL_CERT_FILE'], '/run/secrets/unifi-ca.pem')
+        self.assertIn('/etc/microserver/private/unifi-ca.pem:/run/secrets/unifi-ca.pem:ro', custom_compose['services']['unpoller']['volumes'])
+        alias_context = dict(context, microserver_unifi_controller_ip='192.168.50.1')
+        alias = next(task for task in self.monitoring if task['name'].startswith('Validate an optional private controller'))
+        self.assertTrue(assertions(alias, alias_context))
+        for address in ['0.0.0.0', '203.0.113.1', '192.168.50.1\n', '192.168.50.256', '192.168.050.1']:
+            self.assertFalse(assertions(alias, dict(context, microserver_unifi_controller_ip=address)))
+        alias_compose = yaml.safe_load(ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(**alias_context))
+        self.assertEqual(alias_compose['services']['unpoller']['extra_hosts'], ['gateway.home.arpa:192.168.50.1'])
+        for name in ['Inspect only owner-prepared UniFi credential metadata', 'Inspect only optional UniFi CA metadata']:
+            task = next(task for task in self.monitoring if task['name'] == name)
+            self.assertFalse(task['ansible.builtin.stat']['get_checksum'])
+            self.assertFalse(task['ansible.builtin.stat']['follow'])
+        scrape = yaml.safe_load(ENV.from_string((ROLE / 'templates/prometheus.yaml.j2').read_text()).render(**context))
+        job = next(job for job in scrape['scrape_configs'] if job['job_name'] == 'microserver-unifi')
+        policy = job['metric_relabel_configs'][0]
+        self.assertEqual(policy['action'], 'keep')
+        self.assertIsNotNone(re.fullmatch(policy['regex'], 'unifipoller_device_wan_receive_bytes_total'))
+        self.assertIsNone(re.fullmatch(policy['regex'], 'unifipoller_client_receive_bytes_total'))
+        self.assertIsNone(re.fullmatch(policy['regex'], 'unifipoller_device_info'))
+        default = yaml.safe_load(ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(**self.context))
+        self.assertNotIn('unpoller', default['services'])
+        stop = next(task for task in self.monitoring if task['name'].startswith('Stop the optional collector'))
+        self.assertIn('not microserver_unifi_metrics_enabled', stop['when'])
+        if len(sys.argv) > 1:
+            output = Path(sys.argv[1])
+            (output / 'compose-unifi.yaml').write_text(str(ENV.from_string((ROLE / 'templates/compose.yaml.j2').read_text()).render(**context)))
+            (output / 'prometheus-unifi.yaml').write_text(str(ENV.from_string((ROLE / 'templates/prometheus.yaml.j2').read_text()).render(**context)))
+
+    def test_installer_payload_contains_current_runtime_sources(self):
+        payload = set(line for line in (ROOT / 'installer/media/payload.files').read_text().splitlines()
+                      if line and not line.startswith('#'))
+        for path in ROLE.rglob('*'):
+            if path.is_file() and '__pycache__' not in path.parts:
+                self.assertIn(str(path.relative_to(ROOT)), payload)
+        for name in ['datasources.metrics.yaml', 'datasources.logs.yaml', 'dashboards.yaml']:
+            self.assertIn('observability/config/' + name, payload)
+
+    def test_network_queries_have_data_units_and_no_fabricated_health(self):
+        dashboard = json.loads((ROLE / 'files/network-dashboard.json').read_text())
+        expected = {(1, 'A'): 1, (2, 'A'): 45, (3, 'A'): 1, (4, 'A'): 86400,
+                    (5, 'A'): 8000, (5, 'B'): 1600, (6, 'A'): .012,
+                    (7, 'A'): 25, (8, 'A'): 40, (9, 'A'): 45,
+                    (10, 'A'): 1_000_000_000, (11, 'A'): 8, (11, 'B'): 16,
+                    (12, 'A'): 0, (12, 'B'): .1}
+        queries = []
+        covered = set()
+        for panel in dashboard['panels']:
+            self.assertEqual(panel['datasource']['uid'], 'prometheus')
+            for target in panel['targets']:
+                key = (panel['id'], target['refId'])
+                covered.add(key)
+                self.assertNotIn('vector(0)', target['expr'])
+                self.assertEqual(target['instant'], panel['type'] == 'stat')
+                queries.append(dict(expr=f"sum({target['expr']})", eval_time='6m',
+                                    exp_samples=[dict(labels='{}', value=expected[key])]))
+        self.assertEqual(covered, set(expected))
+        for number, unit in [(5, 'bps'), (6, 's'), (7, 'percent'), (8, 'percent'), (9, 'celsius'), (10, 'bps')]:
+            self.assertEqual(next(panel for panel in dashboard['panels'] if panel['id'] == number)['fieldConfig']['defaults']['unit'], unit)
+        if len(sys.argv) > 1:
+            test = dict(rule_files=[], evaluation_interval='1m', tests=[
+                dict(interval='1m', input_series=read_yaml(ROOT / 'tests/fixtures/microserver/network_series.yaml'),
+                     promql_expr_test=queries)])
+            (Path(sys.argv[1]) / 'network_test.yaml').write_text(yaml.safe_dump(test))
 
     def test_dashboard_queries_have_data_and_correct_units(self):
         dashboard = json.loads((ROLE / 'files/microserver-dashboard.json').read_text())

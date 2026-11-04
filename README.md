@@ -38,7 +38,7 @@ compresses and encrypts before transmission. The MicroServer stores the encrypte
 repository; usable backup decryption secrets stay off the NAS. Ordinary NFS files
 remain ordinary shared files. See the [backup design and qualification](docs/BACKUPS.md).
 
-Grafana, Prometheus, Alertmanager, Loki and Vector run in Docker Compose containers, managed
+Grafana, Prometheus, Alertmanager, Loki, Vector and optional UnPoller run in Docker Compose containers, managed
 by systemd on Debian, independently of workstation K3s. The native node exporter,
 NFS and ZFS run on the host. The MicroServer's scope is monitoring, storage and
 backup receiving; AI services and CPU-intensive processing stay on Threadripper.
@@ -250,6 +250,9 @@ The five container memory limits total 5632 MiB (5.5 GiB), excluding Docker, the
 exporter, OS and ZFS cache; actual usage remains to be measured.
 Grafana and Prometheus each have 2 GiB ceilings, Loki has 1 GiB, and Vector
 and Alertmanager have 256 MiB each. The limits are not memory reservations.
+Optional UniFi performance polling adds a 256 MiB UnPoller container, taking the
+combined ceiling to 5.75 GiB and 1.5 CPUs. It is disabled until the owner prepares
+controller authentication and verifies HTTPS trust.
 Initial CPU ceilings for the dual-core X3216 are 0.5 CPU for Prometheus,
 0.5 for Grafana, 0.1 for Alertmanager, 0.2 for Loki and 0.1 for Vector,
 totaling 1.4 CPUs. These ceilings
@@ -290,6 +293,12 @@ disk buffer. The UniFi UDP listener is disabled by default. Enabling it requires
 an exact private gateway sender and an actual NAS bind address; it forwards
 only that sender's records on UDP 1514. Existing firewall rules are preserved.
 See [UniFi log setup and acceptance checks](docs/UNIFI-LOGS.md).
+
+Grafana separates network dashboards into a **Network** folder alongside
+**Infrastructure**. **Network overview** shows NAS interface speed, traffic,
+errors and drops, plus WAN/device performance when UnPoller is enabled.
+**UniFi events** provides the gateway logs. Existing dashboard UIDs and URLs
+are preserved. See [network dashboard and collector setup](docs/NETWORK-MONITORING.md).
 
 Before LAN telemetry cutover, review actual addresses, TLS/authentication and
 firewall scope, then qualify Alloy forwarding, node labels and workstation

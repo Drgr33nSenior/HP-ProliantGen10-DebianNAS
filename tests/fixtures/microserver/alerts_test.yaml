@@ -1,6 +1,29 @@
 rule_files: [alerts.yaml]
 evaluation_interval: 1m
 tests:
+  - name: Optional UniFi failure and stale cache fire and recover
+    interval: 1m
+    input_series:
+      - series: 'up{job="microserver-unifi"}'
+        values: '1x16'
+      - series: 'unifipoller_controller_up{job="microserver-unifi",source="gateway"}'
+        values: '0x5 1x10'
+      - series: 'unifipoller_prometheus_cache_age_seconds{job="microserver-unifi"}'
+        values: '240x5 10x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MicroServerUniFiPollingUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning, job: microserver-unifi, source: gateway}
+            exp_annotations: {summary: 'UniFi gateway performance polling is unavailable or stale'}
+          - exp_labels: {severity: warning, job: microserver-unifi}
+            exp_annotations: {summary: 'UniFi gateway performance polling is unavailable or stale'}
+      - {eval_time: 12m, alertname: MicroServerUniFiPollingUnavailable, exp_alerts: []}
+  - name: Disabled UniFi polling does not alert
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - {eval_time: 10m, alertname: MicroServerUniFiPollingUnavailable, exp_alerts: []}
   - name: Missing exporter fires after the hold period
     interval: 1m
     input_series: []
