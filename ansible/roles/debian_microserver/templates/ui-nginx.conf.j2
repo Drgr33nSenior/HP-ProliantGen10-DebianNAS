@@ -1,0 +1,122 @@
+# HTTP access for the owner's trusted intranet networks.
+worker_processes 1;
+# The service supplies its runtime PID path. Root template validation uses
+# /dev/null so it cannot leave a root-owned PID file for www-data.
+error_log stderr warn;
+events { worker_connections 256; }
+http {
+    server_tokens off;
+    client_max_body_size 16m;
+    client_body_temp_path /run/microserver-ui/client-body;
+    proxy_temp_path /run/microserver-ui/proxy;
+    fastcgi_temp_path /run/microserver-ui/fastcgi;
+    uwsgi_temp_path /run/microserver-ui/uwsgi;
+    scgi_temp_path /run/microserver-ui/scgi;
+    # Keep client address and request path; omit query strings and credentials.
+    log_format intranet '$remote_addr $host $request_method $uri $status';
+    access_log syslog:server=unix:/run/systemd/journal/dev-log,nohostname,tag=microserver_ui,severity=info intranet;
+{% for network in microserver_ui_allowed_networks %}
+    allow {{ network }};
+{% endfor %}
+    deny all;
+{% if microserver_ui_tls_enabled | bool %}
+    ssl_certificate /run/credentials/microserver-ui.service/ui-fullchain.pem;
+    ssl_certificate_key /run/credentials/microserver-ui.service/ui-privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:TLS:1m;
+    # A return executes before access-module allow/deny checks. Apply this
+    # actual-peer decision before issuing an HTTP redirect.
+    geo $ui_redirect_allowed {
+        default 0;
+{% for network in microserver_ui_allowed_networks %}
+        {{ network }} 1;
+{% endfor %}
+    }
+{% endif %}
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto {{ '$scheme' if microserver_ui_tls_enabled | bool else 'http' }};
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 300s;
+    server {
+        listen {{ microserver_ui_address }}:80 default_server;
+        server_name _;
+        return 404;
+    }
+{% if microserver_ui_tls_enabled | bool %}
+    server {
+        listen {{ microserver_ui_address }}:443 ssl default_server;
+        server_name _;
+        ssl_reject_handshake on;
+        return 404;
+    }
+{% endif %}
+{% set ui_backends = [('grafana', 3000), ('prometheus', 9090), ('alertmanager', 9093)] + ([('microserver', 9091)] if microserver_cockpit_enabled | bool else []) %}
+{% for name, port in ui_backends %}
+{% if microserver_ui_tls_enabled | bool %}
+    server {
+        listen {{ microserver_ui_address }}:80;
+        server_name {{ name }}.{{ microserver_ui_domain }};
+        if ($ui_redirect_allowed = 0) { return 403; }
+        return 308 https://{{ name }}.{{ microserver_ui_domain }}$request_uri;
+    }
+{% endif %}
+    server {
+        listen {{ microserver_ui_address }}:{{ '443 ssl' if microserver_ui_tls_enabled | bool else '80' }};
+        server_name {{ name }}.{{ microserver_ui_domain }};
+        location / {
+            proxy_pass http://127.0.0.1:{{ port }};
+        }
+    }
+{% endfor %}
+{% if microserver_telemetry_enabled | bool %}
+    # BEGIN workstation ingestion
+    server {
+        listen {{ microserver_ui_address }}:8080 default_server;
+        server_name _;
+        allow {{ microserver_telemetry_client_address }}/32;
+        deny all;
+        client_max_body_size 4m;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 15s;
+        location = /ready {
+            limit_except GET { deny all; }
+            proxy_pass http://127.0.0.1:3200/ready;
+        }
+        location = /api/v1/write {
+            limit_except POST { deny all; }
+            proxy_pass http://127.0.0.1:9090/api/v1/write;
+        }
+        location = /loki/api/v1/push {
+            limit_except POST { deny all; }
+            proxy_pass http://127.0.0.1:3100/loki/api/v1/push;
+        }
+        location = /otlp/v1/logs {
+            limit_except POST { deny all; }
+            proxy_pass http://127.0.0.1:3100/otlp/v1/logs;
+        }
+        location = /v1/traces {
+            limit_except POST { deny all; }
+            proxy_pass http://127.0.0.1:4318/v1/traces;
+        }
+{% for name, port in [('prometheus', 9090), ('loki', 3100), ('tempo', 3200), ('grafana', 3000)] %}
+        location = /metrics/{{ name }} {
+            limit_except GET { deny all; }
+            proxy_pass http://127.0.0.1:{{ port }}/metrics;
+        }
+{% endfor %}
+        location / { return 404; }
+    }
+    # END workstation ingestion
+{% endif %}
+}

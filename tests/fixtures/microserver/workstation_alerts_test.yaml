@@ -1,0 +1,58 @@
+rule_files: [workstation-alerts.yaml]
+evaluation_interval: 30s
+tests:
+  - name: NAS memory does not mask missing workstation telemetry
+    interval: 1m
+    input_series:
+      - series: 'node_memory_MemTotal_bytes{job="microserver-node",instance="nas"}'
+        values: '100+0x10'
+      - series: 'node_memory_MemAvailable_bytes{job="microserver-node",instance="nas"}'
+        values: '1+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: WorkstationMemoryHeadroomLow
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: WorkstationHostTelemetryMissing
+        exp_alerts:
+          - exp_labels: {job: node, severity: warning}
+            exp_annotations: {summary: 'No host memory observations; missing data is not healthy data'}
+  - name: NAS low memory does not become a workstation memory alert
+    interval: 1m
+    input_series:
+      - series: 'node_memory_MemTotal_bytes{job="microserver-node",instance="nas"}'
+        values: '100+0x10'
+      - series: 'node_memory_MemAvailable_bytes{job="microserver-node",instance="nas"}'
+        values: '1+0x10'
+      - series: 'node_memory_MemTotal_bytes{job="node",instance="threadripper-ai"}'
+        values: '100+0x10'
+      - series: 'node_memory_MemAvailable_bytes{job="node",instance="threadripper-ai"}'
+        values: '80+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: WorkstationMemoryHeadroomLow
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: WorkstationHostTelemetryMissing
+        exp_alerts: []
+    promql_expr_test:
+      - expr: workstation:memory_available_ratio
+        eval_time: 6m
+        exp_samples:
+          - labels: 'workstation:memory_available_ratio{job="node",instance="threadripper-ai"}'
+            value: 0.8
+  - name: workstation low memory still alerts
+    interval: 1m
+    input_series:
+      - series: 'node_memory_MemTotal_bytes{job="node",instance="threadripper-ai"}'
+        values: '100+0x10'
+      - series: 'node_memory_MemAvailable_bytes{job="node",instance="threadripper-ai"}'
+        values: '5+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: WorkstationMemoryHeadroomLow
+        exp_alerts:
+          - exp_labels: {job: node, instance: threadripper-ai, severity: warning}
+            exp_annotations:
+              summary: 'Host available RAM below 10%; no swap baseline'
+              description: 'Inspect AI/build overlap and pod memory; do not remove the host reserve.'

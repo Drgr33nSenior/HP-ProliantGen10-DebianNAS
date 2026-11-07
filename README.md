@@ -15,18 +15,21 @@ physical installation, recovery, NFS access or monitoring performance.
 | Platform | Original MicroServer Gen10; owner-confirmed dual-core Opteron X3216 (1.6–3.0 GHz) |
 | RAM | 24 GB; retain headroom for the OS and ZFS cache |
 | OS storage | SanDisk SSD PLUS 240 GB (223.6 GiB reported): Debian, container images and active monitoring databases |
-| Bulk storage | Four 2 TB Seagate IronWolf ST2000VN004 HDDs; unassigned LVM PVs await identity checks and owner approval for reuse |
-| Network | Binardat RJ45 card, owner-reported Aquantia AQC107; in the electrically x8 slot; dedicated GPU removed |
-| Pool | Planned owner-created four-disk RAIDZ2, about 4 TB / 3.64 TiB before filesystem overhead and free-space reserve |
+| Bulk storage | Four 2 TB Seagate IronWolf ST2000VN004 HDDs; the owner has created and qualified the RAIDZ2 pool |
+| Network | Binardat RJ45 card with an Aquantia AQC107; 10Gb full-duplex link qualified; in the electrically x8 slot; dedicated GPU removed |
+| Pool | Owner-created four-disk RAIDZ2, about 4 TB / 3.64 TiB before filesystem overhead and free-space reserve |
 
 The [Seagate datasheet](https://www.seagate.com/content/dam/seagate/en/content-fragments/products/datasheets/ironwolf-12tb/ironwolf-DS1904-22-2404US-en_US.pdf)
 lists ST2000VN004 as a 2 TB, CMR, 5900 RPM NAS drive. Keep actual serials,
 disk IDs, SSH identities and addresses in a private install journal outside Git.
-The owner supplied four HDD serials; their device-reported identities and bay
-mapping remain to be verified on the physical server.
+The device identities and bay mapping belong in that private install journal.
+Recheck them before any replacement, pool recreation or other destructive work.
 The AQC107 uses Debian's `atlantic` kernel driver. The pinned installer includes
-the module; actual card identity, firmware and link speed need first-boot checks.
+the module. The commissioned card negotiated 10Gb; the saved VLAN configuration
+still needs a maintenance-window reboot check.
 See the [NIC verification procedure](docs/INSTALL-MEDIA.md#verify-the-aqc107-network-card).
+See [release and build-out readiness](docs/READINESS.md) for accepted checks and
+the remaining storage and recovery gates.
 
 Keep active models, coding workspaces and active Graphiti/database storage on
 workstation SSDs. Use NFS for documents, datasets, model archives and backups.
@@ -48,7 +51,8 @@ this repository owns their subsequent review and updates. See [NOTICE](NOTICE).
 A separate MicroServer dashboard covers host resources, network traffic,
 CPU/APU and DIMM temperatures, DIMM limits and per-container Docker resources.
 NAS-specific rules cover host health and failed or stale Docker collection.
-Workstation dashboards remain incomplete until telemetry cutover is qualified.
+New installations require a qualified collector cutover before the workstation
+dashboards represent that host. See the readiness record for the commissioned NAS.
 Cluster-specific workstation absence/GPU rules are not reused as NAS health rules.
 
 ## 1. Install Debian on the SSD
@@ -69,14 +73,16 @@ for `/var`, 40.98 GiB for `/var/log`, 9.31 GiB for `/tmp` and 3.75 GiB swap.
 The owner reported about 128 GiB available in `/var`, sufficient for the initial
 monitoring budget. See the [installed SSD layout](docs/SSD-LVM.md).
 This replaces the first installation's small `/var`; the previous ext4 resize
-procedure does not apply. The latest LVM output lists no HDD volume group or
-LVs, but each HDD still has a partition with an LVM signature. Verify identities
-and obtain owner approval before reuse; unassigned PVs do not prove erased data.
+procedure does not apply. The earlier HDD LVM inventory predates the owner-created
+ZFS pool. For a rebuild, verify current identities, signatures and required data
+before authorizing reuse. This profile does not erase disks or recreate the pool.
 
 Use Debian's kernel and signed package repositories. Enable Debian `contrib`
 for ZFS, with matching kernel headers; follow the
 [OpenZFS Debian instructions](https://openzfs.github.io/openzfs-docs/Getting%20Started/Debian/index.html).
-This profile does not add third-party repositories or disable package checks.
+The base package stage uses Debian's signed repositories. The optional Cockpit
+procedure adds the reviewed, signed 45Drives repository. Package verification
+remains enabled.
 Resolve DKMS/module-signing requirements locally if firmware Secure Boot is
 enabled. Do not disable firmware verification to make module loading succeed.
 
@@ -197,9 +203,21 @@ backup dataset, use `compression=off` and `dedup=off`: Restic has already proces
 the content on the workstation. This profile does not create that backup dataset
 or change existing dataset properties.
 
-Set the private configuration's pool GUID, exact private IPv4 NFS client
-addresses and the owner's numeric share UID/GID. Use matching numeric identities
-on the server and Linux client. Share-root ownership changes are nonrecursive.
+Set the private configuration's pool GUID, exact NFS client IPv4 addresses or
+fully qualified hostnames, and the owner's numeric share UID/GID. The NAS must
+resolve every client to private IPv4 addresses before storage tasks change it.
+The role validates all resolved addresses and writes a sorted, deduplicated
+address list to the export. Unresolved names and public addresses stop the apply;
+wildcards, subnets and IPv6 client addresses are not accepted.
+
+Use stable LAN DNS names, for example `nas.home.arpa` and
+`workstation.home.arpa`, with DHCP reservations. Client mounts and Kubernetes NFS
+server settings can use the NAS hostname. DNS must work from the NAS and each
+Kubernetes node's host OS. When moving to another VLAN, update DNS, verify
+resolution, reapply storage configuration to refresh the export addresses and
+remount the shares. Existing NFS connections do not migrate when DNS changes.
+Use matching numeric identities on the server and Linux client. Share-root
+ownership changes are nonrecursive.
 NFSv4 exports use `root_squash`, synchronous writes and a mounted-filesystem
 guard. These restrictions do not encrypt NFS traffic or authenticate users
 against a directory; use only the reviewed trusted storage network.
@@ -279,10 +297,27 @@ working set and memory-limit use. CPU rates need two collection samples.
 Failed or stale collection raises a local alert. See
 [Docker collection and diagnosis](docs/HOST-TOOLS.md#docker-statistics).
 
+The [ZFS dashboard and alerts](docs/ZFS-MONITORING.md) add pool capacity, device
+errors, ARC behaviour and the latest scrub/resilver record through the same node
+exporter. Existing installations use the scoped owner-run `ansible/owner-zfs.yml`
+update. See [Kubernetes storage choices](docs/KUBERNETES-STORAGE.md) before moving
+application claims to NFS.
+
+For pool, dataset and snapshot management, use the optional
+[Cockpit ZFS management workflow](docs/ZFS-MANAGEMENT.md). It separates the
+owner-run ZFS 2.4 package upgrade and reboot verification from UI installation.
+The same guide covers optional local 45Drives notifications and an isolated,
+quota-limited owner write, snapshot, rollback and cleanup test.
+
 Linux host networking lets containers reach the loopback-only native exporter.
 Grafana 3000, Prometheus 9090, Alertmanager 9093 and node exporter 9100 bind only
 to `127.0.0.1`. Loki HTTP 3100/gRPC 9095 and Vector metrics 8687 also use loopback.
-Use owner SSH forwarding to inspect the UIs. Prometheus starts
+Use owner SSH forwarding to inspect the UIs, or enable the optional
+[intranet UI proxy](docs/INTRANET-UIS.md) for trusted LAN and VPN clients through
+internal DNS. Optional [private HTTPS and automatic renewal](docs/INTRANET-TLS.md)
+use a NAS-owned Let's Encrypt certificate through Cloudflare DNS validation.
+The proxy binds one private NAS address and keeps the backend
+listeners on loopback. Prometheus starts
 with 14-day/24-GB retention on the SSD; this is not a quota on the whole SSD.
 The local Alertmanager UI receives NAS alerts; no external notification receiver
 is configured and no messages are sent.
@@ -309,6 +344,9 @@ firewall scope, then qualify Alloy forwarding, node labels and workstation
 alerts against both machines. Keep existing collection until the new path and
 dashboards pass. Do not put the active Prometheus database on an NFS mount.
 See [Prometheus storage requirements](https://prometheus.io/docs/prometheus/latest/storage/).
+The optional [workstation receiver component](docs/WORKSTATION-TELEMETRY.md)
+adds source-restricted ingestion and a loopback Tempo service before collector
+cutover. The base installation leaves this component disabled.
 
 ## Recovery and qualification
 
@@ -322,11 +360,12 @@ The play preserves existing service data directories. Grafana's initial password
 file is not a password-rotation mechanism. Owner-controlled service stops must
 retain `/var/lib/microserver`; do not use Compose volume deletion as cleanup.
 
-Remaining hardware acceptance includes repeated configuration/idempotence,
-DKMS/module loading and reboot, pool import/mount, SMART self-tests, scheduled
-scrubs/snapshots, separate backup and restore, NFS permissions, measured SSD/RAM/
-CPU use, 10GbE throughput, and private telemetry/notification cutover. SMB,
-Tempo and joining K3s are follow-ups, not enabled by this profile.
+Each new installation needs configuration/idempotence, module loading and
+reboot, pool import/mount, SMART self-tests, scheduled scrubs/snapshots, separate
+backup and restore, NFS permissions, measured resource use, throughput and
+telemetry/notification acceptance. For the commissioned NAS, completed checks
+and remaining gates are recorded in [readiness](docs/READINESS.md). SMB and
+joining K3s are follow-ups, not enabled by this profile.
 
 The third-party [Ubuntu MicroServer project](https://github.com/aamkye/ubuntu_on_HPE_ProLiant_MS_GEN10)
 is a hardware reference only. No third-party playbooks, credentials, kernel PPA,

@@ -1,0 +1,24 @@
+---
+# Owner-run component update for an already commissioned NAS.
+- name: Owner-run MicroServer workstation telemetry receiver
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  pre_tasks:
+    - name: Require one authorised production NAS and explicit receiver inputs
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - microserver_telemetry_enabled | default(false) | bool
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: Run this component only for one commissioned Debian 13 AMD64 NAS.
+  tasks:
+    - name: Configure only the workstation telemetry receiver
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: telemetry

@@ -1,6 +1,28 @@
 # Linux host networking reaches the loopback-only native exporter. Every service
 # binds to loopback, apart from the explicitly enabled UniFi syslog receiver.
+# An optional intranet proxy provides UI access through a private NAS address.
 services:
+{% if microserver_telemetry_enabled | bool %}
+  tempo:
+    image: {{ microserver_tempo_image }}
+    user: '10001:10001'
+    network_mode: host
+    command: [-config.file=/etc/tempo/tempo.yaml]
+    environment: {GOMEMLIMIT: 614MiB}
+    volumes:
+      - /etc/microserver/monitoring/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - /var/lib/microserver/tempo:/var/tempo
+    tmpfs: ['/tmp:size=16m,mode=1777']
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 0.25
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+{% endif %}
   prometheus:
     image: {{ microserver_prometheus_image }}
     user: '65534:65534'
@@ -11,6 +33,9 @@ services:
       - --storage.tsdb.retention.time=14d
       - --storage.tsdb.retention.size=24GB
       - --web.listen-address=127.0.0.1:9090
+{% if microserver_ui_enabled | bool %}
+      - --web.external-url={{ 'https' if microserver_ui_tls_enabled | bool else 'http' }}://prometheus.{{ microserver_ui_domain }}/
+{% endif %}
       - --web.enable-remote-write-receiver
       - --query.max-concurrency=2
       - --query.timeout=30s
@@ -18,6 +43,9 @@ services:
     volumes:
       - /etc/microserver/monitoring/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
       - /etc/microserver/monitoring/alerts.yaml:/etc/prometheus/alerts.yaml:ro
+{% if microserver_workstation_rules_enabled | bool %}
+      - /etc/microserver/monitoring/workstation-alerts.yaml:/etc/prometheus/workstation-alerts.yaml:ro
+{% endif %}
       - /var/lib/microserver/prometheus:/prometheus
     mem_limit: 2048m
     memswap_limit: 2048m
@@ -34,6 +62,13 @@ services:
     network_mode: host
     environment:
       GF_SERVER_HTTP_ADDR: 127.0.0.1
+{% if microserver_ui_enabled | bool %}
+      GF_SERVER_DOMAIN: 'grafana.{{ microserver_ui_domain }}'
+      GF_SERVER_ROOT_URL: '{{ "https" if microserver_ui_tls_enabled | bool else "http" }}://grafana.{{ microserver_ui_domain }}/'
+{% if microserver_ui_tls_enabled | bool %}
+      GF_SECURITY_COOKIE_SECURE: 'true'
+{% endif %}
+{% endif %}
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
       GF_AUTH_ANONYMOUS_ENABLED: 'false'
       GF_USERS_ALLOW_SIGN_UP: 'false'
@@ -66,6 +101,9 @@ services:
       - --config.file=/etc/alertmanager/alertmanager.yaml
       - --storage.path=/alertmanager
       - --web.listen-address=127.0.0.1:9093
+{% if microserver_ui_enabled | bool %}
+      - --web.external-url={{ 'https' if microserver_ui_tls_enabled | bool else 'http' }}://alertmanager.{{ microserver_ui_domain }}/
+{% endif %}
       - --cluster.listen-address=
       - --data.retention=120h
       - --log.level=error

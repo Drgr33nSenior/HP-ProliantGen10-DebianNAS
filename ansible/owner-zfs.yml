@@ -1,0 +1,128 @@
+---
+- name: Owner-run MicroServer ZFS visibility update
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  pre_tasks:
+    - name: Require one commissioned production NAS and a pinned rules validator
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - microserver_monitoring_enabled | bool
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_facts.hostname == 'microserver'
+          - ansible_play_hosts_all | length == 1
+          - microserver_pool_name is match('^[A-Za-z][A-Za-z0-9_.-]{0,63}$')
+          - microserver_pool_guid is string and microserver_pool_guid is match('^[0-9]+$')
+          - microserver_prometheus_image is match('^docker[.]io/prom/prometheus:v[0-9.]+@sha256:[a-f0-9]{64}$')
+    - name: Require the running commissioned monitoring stack
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, is-active, microserver-monitoring.service, prometheus-node-exporter.service]
+      changed_when: false
+    - name: Read only the selected pool identity
+      ansible.builtin.command:
+        argv: [/usr/sbin/zpool, get, -H, -o, value, guid, '{{ microserver_pool_name }}']
+      changed_when: false
+      register: microserver_zfs_identity
+      no_log: true
+    - name: Require the commissioned pool identity without printing it
+      ansible.builtin.assert:
+        that: [microserver_zfs_identity.stdout == microserver_pool_guid]
+        quiet: true
+    - name: Inspect existing ZFS monitoring parent paths
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      loop:
+        - /etc/microserver
+        - /etc/microserver/monitoring
+        - /etc/microserver/monitoring/dashboard-folders
+        - /etc/microserver/monitoring/dashboard-folders/Infrastructure
+        - /etc/systemd/system
+        - /var/lib/microserver
+        - /var/lib/microserver/node-exporter
+        - /usr/local/libexec
+      register: microserver_zfs_parents
+    - name: Require protected existing parent directories
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists and item.stat.isdir | default(false) and not item.stat.islnk | default(false)
+          - item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$')
+      loop: '{{ microserver_zfs_parents.results }}'
+  tasks:
+    - name: Inspect the currently mounted NAS alert rule file
+      ansible.builtin.stat:
+        path: /etc/microserver/monitoring/alerts.yaml
+        follow: false
+        checksum_algorithm: sha256
+        get_mime: false
+      register: microserver_zfs_rule_path
+    - name: Require the existing protected NAS rule file
+      ansible.builtin.assert:
+        that:
+          - microserver_zfs_rule_path.stat.exists and microserver_zfs_rule_path.stat.isreg | default(false)
+          - not microserver_zfs_rule_path.stat.islnk | default(false)
+          - microserver_zfs_rule_path.stat.uid == 0 and microserver_zfs_rule_path.stat.mode == '0644'
+          - >-
+            microserver_zfs_rule_path.stat.checksum in [microserver_zfs_source_rules | hash('sha256'),
+            microserver_zfs_source_rules.split('  - name: microserver_zfs')[0] | hash('sha256')]
+      vars:
+        microserver_zfs_source_rules: "{{ lookup('ansible.builtin.file', playbook_dir + '/roles/debian_microserver/files/alerts.yaml', rstrip=false) }}"
+    - name: Install only ZFS visibility components
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: zfs-monitoring
+    - name: Validate and install the retained NAS rules and additional ZFS rule group
+      ansible.builtin.copy:
+        src: '{{ playbook_dir }}/roles/debian_microserver/files/alerts.yaml'
+        dest: /etc/microserver/monitoring/alerts.yaml
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
+        validate: '/usr/bin/timeout 60 /usr/bin/docker run --rm --pull never --network none --read-only --user 0:0 --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 --pids-limit 64 --volume %s:/rules.yaml:ro --entrypoint /bin/promtool {{ microserver_prometheus_image }} check rules /rules.yaml'
+      notify: Reload MicroServer Prometheus rules
+    - name: Apply the collector and mounted rule update
+      ansible.builtin.meta: flush_handlers
+    - name: Capture a fresh ZFS snapshot without changing the pool
+      ansible.builtin.systemd_service:
+        name: microserver-zfs-metrics.service
+        state: started
+    - name: Wait for Prometheus after the rule bind mount is refreshed
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9090/-/ready
+        return_content: false
+        status_code: 200
+      register: microserver_zfs_ready
+      until: microserver_zfs_ready.status | default(0) == 200
+      retries: 30
+      delay: 2
+      when: not ansible_check_mode
+    - name: Verify the provisioned ZFS dashboard and evaluated ZFS rules
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-workstation-verify.py, --zfs]
+      changed_when: false
+      register: microserver_zfs_verification
+      until: microserver_zfs_verification.rc == 0
+      retries: 20
+      delay: 3
+      when: not ansible_check_mode
+    - name: Report ZFS metadata and rule acceptance
+      ansible.builtin.debug:
+        msg: '{{ microserver_zfs_verification.stdout | default("Verification not run in check mode") }}'
+    - name: Verify a successful fresh ZFS scrape
+      ansible.builtin.uri:
+        url: 'http://127.0.0.1:9090/api/v1/query?query=microserver_zfs_collection_success%7Bjob%3D%22microserver-node%22%7D%3D%3D1%20and%20on%28job%2Cinstance%29%20%28time%28%29-microserver_zfs_collection_timestamp_seconds%7Bjob%3D%22microserver-node%22%7D%3C180%29'
+        return_content: true
+        status_code: 200
+      register: microserver_zfs_scrape
+      until: microserver_zfs_scrape.json.data.result | default([]) | length == 1
+      retries: 20
+      delay: 3
+      when: not ansible_check_mode

@@ -1,11 +1,33 @@
 ---
-# Copy outside Git. Discover the actual GUID, client addresses and numeric IDs.
+# Copy outside Git. Discover the actual GUID, client identities and numeric IDs.
 microserver_pool_name: nas
 microserver_pool_guid: ''
+# Exact private IPv4s or FQDNs resolved and validated on the NAS during apply.
+# For example: ['workstation.home.arpa']. Unresolved names block storage changes.
 microserver_nfs_clients: []
 microserver_share_uid: 0
 microserver_share_gid: 0
 microserver_monitoring_enabled: false
+# Optional HTTP intranet UIs. Backends and exporters remain on loopback.
+# Use a NAS private address, internal DNS suffix and exact trusted IPv4 CIDRs.
+# Create grafana, prometheus and alertmanager A records in your internal DNS.
+microserver_ui_enabled: false
+# Commission owner-tls.yml first, then retain this flag for later applies.
+microserver_ui_tls_enabled: false
+# Commission owner-cockpit.yml after the owner ZFS 2.4 upgrade and reboot checks.
+# Retain this flag in later UI/monitoring profiles once management is installed.
+microserver_cockpit_enabled: false
+microserver_cockpit_admin: ''
+microserver_ui_address: ''
+microserver_ui_domain: ''
+microserver_ui_allowed_networks: []
+# After monitoring/UI commissioning, use ansible/owner-telemetry.yml to add
+# the NAS trace backend and source-restricted HTTP ingestion on TCP 8080.
+microserver_telemetry_enabled: false
+microserver_telemetry_client_address: ''
+# After receiver qualification, owner-workstation.yml loads the NAS-scoped
+# workstation alerts. Retain this flag for later full monitoring applies.
+microserver_workstation_rules_enabled: false
 # Set false if measured IRQ placement/throughput regresses with balancing.
 microserver_irqbalance_enabled: true
 # Enable only for the Micron DIMM pair qualified in docs/HOST-TOOLS.md.

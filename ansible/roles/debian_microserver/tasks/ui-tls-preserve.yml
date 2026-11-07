@@ -1,0 +1,33 @@
+---
+- name: Inspect whether HTTPS has been commissioned
+  ansible.builtin.stat:
+    path: /etc/systemd/system/microserver-ui.service.d/tls.conf
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_existing_tls
+
+- name: Preserve commissioned HTTPS during later applies
+  ansible.builtin.assert:
+    that:
+      - not microserver_existing_tls.stat.exists or microserver_ui_tls_enabled | bool
+      - not microserver_ui_tls_enabled | bool or microserver_ui_enabled | bool
+      - not microserver_ui_tls_enabled | bool or (microserver_existing_tls.stat.exists and microserver_existing_tls.stat.isreg | default(false) and not microserver_existing_tls.stat.islnk | default(false) and microserver_existing_tls.stat.uid == 0)
+    fail_msg: Retain the commissioned HTTPS flag and UI profile; use the owner TLS workflow to commission HTTPS.
+
+- name: Inspect the commissioned Cockpit listener marker
+  ansible.builtin.stat:
+    path: /etc/systemd/system/cockpit.socket.d/microserver.conf
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_existing_cockpit
+
+- name: Preserve Cockpit and HTTPS during later proxy renders
+  ansible.builtin.assert:
+    that:
+      - not microserver_existing_cockpit.stat.exists or microserver_cockpit_enabled | bool
+      - not microserver_cockpit_enabled | bool or (microserver_ui_enabled | bool and microserver_ui_tls_enabled | bool)
+      - not microserver_cockpit_enabled | bool or microserver_existing_cockpit.stat.exists
+      - not microserver_existing_cockpit.stat.exists or (microserver_existing_cockpit.stat.isreg | default(false) and not microserver_existing_cockpit.stat.islnk | default(false) and microserver_existing_cockpit.stat.uid == 0)
+    fail_msg: Retain the commissioned Cockpit and HTTPS flags. Use the owner Cockpit workflow for installation.

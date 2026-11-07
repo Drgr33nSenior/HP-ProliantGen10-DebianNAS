@@ -1,0 +1,57 @@
+---
+- name: Owner-run Cockpit ZFS management installation
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  pre_tasks:
+    - name: Require one commissioned NAS with the retained HTTPS profile
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - ansible_play_hosts_all | length == 1
+          - ansible_facts.hostname == 'microserver'
+          - ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - microserver_cockpit_enabled | bool
+          - microserver_ui_enabled | bool and microserver_ui_tls_enabled | bool
+          - microserver_telemetry_enabled | bool and microserver_workstation_rules_enabled | bool
+          - microserver_cockpit_admin is match('^[a-z_][a-z0-9_-]{0,31}$')
+          - microserver_cockpit_admin != 'root'
+          - not ansible_check_mode
+    - name: Verify the completed ZFS upgrade and retained NAS health before adding management
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-upgrade.py, verify, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+      changed_when: false
+      no_log: true
+    - name: Require the selected existing Linux administrator
+      ansible.builtin.command:
+        argv: [/usr/bin/id, '{{ microserver_cockpit_admin }}']
+      changed_when: false
+      no_log: true
+    - name: Read the active public proxy checksum
+      ansible.builtin.stat:
+        path: /etc/microserver/ui/nginx.conf
+        follow: false
+        checksum_algorithm: sha256
+        get_mime: false
+      register: microserver_cockpit_proxy
+    - name: Require the reviewed proxy baseline
+      ansible.builtin.assert:
+        that:
+          - microserver_cockpit_proxy.stat.isreg | default(false)
+          - not microserver_cockpit_proxy.stat.islnk | default(false)
+          - microserver_cockpit_proxy.stat.uid == 0
+          - microserver_cockpit_proxy.stat.checksum == microserver_cockpit_previous_nginx_sha256
+    - name: Refuse to replace an existing Cockpit installation
+      ansible.builtin.command:
+        argv: [/usr/bin/dpkg-query, -W, '-f=${db:Status-Status}', cockpit-ws]
+      register: microserver_cockpit_installed
+      changed_when: false
+      failed_when: microserver_cockpit_installed.rc == 0 and microserver_cockpit_installed.stdout == 'installed'
+  tasks:
+    - name: Install and qualify the bounded Cockpit component
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: cockpit

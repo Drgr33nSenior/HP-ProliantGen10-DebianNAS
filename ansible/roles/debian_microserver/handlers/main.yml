@@ -23,3 +23,29 @@
     state: restarted
     daemon_reload: true
   when: microserver_monitoring_enabled | bool
+
+- name: Refresh MicroServer ZFS metrics
+  ansible.builtin.systemd_service:
+    name: microserver-zfs-metrics.service
+    state: restarted
+    daemon_reload: true
+  when: microserver_monitoring_enabled | bool
+
+- name: Reload MicroServer Prometheus rules
+  ansible.builtin.command:
+    argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, --force-recreate, prometheus]
+  changed_when: true
+  when: microserver_monitoring_enabled | bool and not ansible_check_mode
+
+- name: Apply MicroServer UI addresses
+  ansible.builtin.command:
+    argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, prometheus, grafana, alertmanager]
+  changed_when: true
+  when: microserver_monitoring_enabled | bool and microserver_ui_monitoring_state.rc | default(3) == 0 and not ansible_check_mode
+
+- name: Reload MicroServer intranet proxy
+  ansible.builtin.systemd_service:
+    name: microserver-ui.service
+    state: restarted
+    daemon_reload: true
+  when: microserver_ui_enabled | bool and not ansible_check_mode

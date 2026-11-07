@@ -1,0 +1,57 @@
+rule_files: [alerts.yaml]
+evaluation_interval: 1m
+tests:
+  - name: Pool and device faults fire and recover
+    interval: 1m
+    input_series:
+      - {series: 'microserver_zfs_pool_healthy{job="microserver-node",pool="nas"}', values: '0x3 1x10'}
+      - {series: 'microserver_zfs_vdev_healthy{job="microserver-node",pool="nas",vdev_guid="2"}', values: '0x3 1x10'}
+      - {series: 'microserver_zfs_vdev_read_errors_total{job="microserver-node",pool="nas",vdev_guid="2"}', values: '7x3 0x10'}
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MicroServerZFSPoolUnhealthy
+        exp_alerts:
+          - exp_labels: {job: microserver-node, pool: nas, severity: critical}
+            exp_annotations: {summary: 'MicroServer ZFS pool is not ONLINE'}
+      - eval_time: 3m
+        alertname: MicroServerZFSDeviceUnhealthy
+        exp_alerts:
+          - exp_labels: {job: microserver-node, pool: nas, vdev_guid: '2', severity: critical}
+            exp_annotations: {summary: 'MicroServer ZFS device is unhealthy'}
+      - eval_time: 3m
+        alertname: MicroServerZFSDeviceErrors
+        exp_alerts:
+          - exp_labels: {job: microserver-node, pool: nas, vdev_guid: '2', severity: warning}
+            exp_annotations: {summary: 'MicroServer ZFS device reports read, write or checksum errors'}
+      - {eval_time: 8m, alertname: MicroServerZFSPoolUnhealthy, exp_alerts: []}
+      - {eval_time: 8m, alertname: MicroServerZFSDeviceUnhealthy, exp_alerts: []}
+      - {eval_time: 8m, alertname: MicroServerZFSDeviceErrors, exp_alerts: []}
+  - name: Capacity thresholds have independent hold periods and recover
+    interval: 1m
+    input_series:
+      - {series: 'microserver_zfs_pool_capacity_ratio{job="microserver-node",pool="nas"}', values: '0.85x16 0.95x10 0.2x10'}
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: MicroServerZFSPoolSpaceLow
+        exp_alerts:
+          - exp_labels: {job: microserver-node, pool: nas, severity: warning}
+            exp_annotations: {summary: 'MicroServer ZFS pool is more than 80% allocated'}
+      - {eval_time: 16m, alertname: MicroServerZFSPoolSpaceCritical, exp_alerts: []}
+      - eval_time: 23m
+        alertname: MicroServerZFSPoolSpaceCritical
+        exp_alerts:
+          - exp_labels: {job: microserver-node, pool: nas, severity: critical}
+            exp_annotations: {summary: 'MicroServer ZFS pool is more than 90% allocated'}
+      - {eval_time: 32m, alertname: MicroServerZFSPoolSpaceLow, exp_alerts: []}
+      - {eval_time: 32m, alertname: MicroServerZFSPoolSpaceCritical, exp_alerts: []}
+  - name: Missing collector alerts while exporter is up
+    interval: 1m
+    input_series:
+      - {series: 'up{job="microserver-node"}', values: '1x6 0x10'}
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MicroServerZFSMetricsUnavailable
+        exp_alerts:
+          - exp_labels: {job: microserver-node, severity: warning}
+            exp_annotations: {summary: 'MicroServer ZFS metrics are unavailable or stale'}
+      - {eval_time: 10m, alertname: MicroServerZFSMetricsUnavailable, exp_alerts: []}

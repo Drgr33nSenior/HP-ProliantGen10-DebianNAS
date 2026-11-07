@@ -1,0 +1,17 @@
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <policy context="default">
+    <deny send_destination="org._45drives.Houston"/>
+  </policy>
+  <policy user="root">
+    <allow own="org._45drives.Houston"/>
+    <allow send_destination="org._45drives.Houston"/>
+  </policy>
+  <policy user="{{ microserver_cockpit_admin }}">
+    <allow send_destination="org._45drives.Houston"/>
+  </policy>
+  <policy user="microserver-alerts">
+    <allow send_destination="org._45drives.Houston" send_interface="org._45drives.Houston" send_member="ForwardMessage"/>
+  </policy>
+</busconfig>

@@ -1,0 +1,24 @@
+[Unit]
+Description=Collect read-only ZFS pool metrics for the MicroServer
+After=zfs-import.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/microserver-zfs-metrics.py --pool {{ microserver_pool_name }}
+TimeoutStartSec=20
+CPUQuota=10%
+MemoryMax=64M
+TasksMax=8
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+PrivateTmp=true
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX
+DevicePolicy=closed
+DeviceAllow=/dev/zfs rw
+ReadWritePaths=/var/lib/microserver/node-exporter

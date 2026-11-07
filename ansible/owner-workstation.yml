@@ -1,0 +1,23 @@
+---
+- name: Owner-run NAS workstation dashboards and alert rules
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  pre_tasks:
+    - name: Require one commissioned production NAS and explicit workstation rules
+      tags: [always]
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - microserver_workstation_rules_enabled | default(false) | bool
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+  tasks:
+    - name: Configure only the NAS workstation monitoring presentation
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: workstation

@@ -8,17 +8,52 @@
       - microserver_share_gid | int > 0
       - microserver_nfs_clients | type_debug == 'list'
       - microserver_nfs_clients | length > 0
-    fail_msg: Supply the existing owner-reviewed ZFS pool GUID, numeric non-root share UID/GID and exact private IPv4 clients.
+    fail_msg: Supply the existing owner-reviewed ZFS pool GUID, numeric non-root share UID/GID and exact client addresses or fully qualified names.
 
-- name: Require individual private IPv4 NFS clients
+- name: Require exact private IPv4 addresses or fully qualified NFS client names
   ansible.builtin.assert:
     that:
       - item is string
-      - item is match('^(10[.](?:[0-9]{1,3}[.]){2}[0-9]{1,3}|192[.]168[.][0-9]{1,3}[.][0-9]{1,3}|172[.](?:1[6-9]|2[0-9]|3[01])[.][0-9]{1,3}[.][0-9]{1,3})$')
+      - item | length <= 253
+      - item == item | trim
+      - >-
+        (item is match(microserver_nfs_private_ipv4_pattern)
+        and item.split('.') | map('int') | max <= 255
+        and item.split('.') | map('int') | join('.') == item)
+        or item is match(microserver_nfs_fqdn_pattern)
+    fail_msg: NFS clients must be exact private IPv4 addresses or fully qualified hostnames, without wildcards, subnets, whitespace or export options.
+  loop: '{{ microserver_nfs_clients }}'
+
+- name: Resolve NFS client IPv4 addresses on the NAS
+  ansible.builtin.command:
+    argv: [getent, ahostsv4, '{{ item }}']
+  loop: '{{ microserver_nfs_clients }}'
+  register: microserver_nfs_resolution
+  changed_when: false
+  check_mode: false
+
+- name: Require an IPv4 result for every configured NFS client
+  ansible.builtin.assert:
+    that: [item.stdout_lines | length > 0]
+    fail_msg: Every NFS client must resolve on the NAS before storage configuration can change.
+  loop: '{{ microserver_nfs_resolution.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Collect the resolved NFS client addresses
+  ansible.builtin.set_fact:
+    microserver_nfs_resolved_clients: >-
+      {{ microserver_nfs_resolution.results | map(attribute='stdout_lines')
+         | flatten | map('split') | map('first') | unique | sort | list }}
+
+- name: Require every resolved NFS client address to be private IPv4
+  ansible.builtin.assert:
+    that:
+      - item is match(microserver_nfs_private_ipv4_pattern)
       - item.split('.') | map('int') | max <= 255
       - item.split('.') | map('int') | join('.') == item
-    fail_msg: NFS clients must be exact RFC1918 IPv4 addresses, never wildcard, subnet, public address or export options.
-  loop: '{{ microserver_nfs_clients }}'
+    fail_msg: Every resolved NFS client address must be canonical RFC1918 IPv4; public, IPv6 and malformed results are refused.
+  loop: '{{ microserver_nfs_resolved_clients }}'
 
 - name: Read the existing pool GUID without importing or creating a pool
   ansible.builtin.command:

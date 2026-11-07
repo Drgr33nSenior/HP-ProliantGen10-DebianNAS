@@ -1,0 +1,183 @@
+---
+- name: Require active monitoring and an explicitly selected private receiver
+  ansible.builtin.assert:
+    that:
+      - microserver_telemetry_enabled | bool
+      - microserver_monitoring_enabled | bool
+      - microserver_ui_enabled | bool
+      - microserver_ui_address in ansible_facts.all_ipv4_addresses
+      - microserver_telemetry_client_address != microserver_ui_address
+
+- name: Validate both exact private receiver addresses
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', role_path + '/files/microserver-ui-validate.py') }}"
+      - "{{ {'address': microserver_ui_address, 'domain': microserver_ui_domain, 'networks': [microserver_ui_address + '/32', microserver_telemetry_client_address + '/32']} | to_json }}"
+  changed_when: false
+  check_mode: false
+
+- name: Require the commissioned monitoring and proxy services
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, is-active, microserver-monitoring.service, microserver-ui.service]
+  changed_when: false
+  check_mode: false
+
+- name: Inspect receiver configuration and state paths
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - {path: /etc/microserver, kind: directory, uid: 0}
+    - {path: /etc/microserver/ui, kind: directory, uid: 0}
+    - {path: /etc/microserver/ui/nginx.conf, kind: file, uid: 0}
+    - {path: /etc/microserver/monitoring, kind: directory, uid: 0}
+    - {path: /etc/microserver/monitoring/compose.yaml, kind: file, uid: 0}
+    - {path: /etc/microserver/monitoring/tempo.yaml, kind: file, uid: 0}
+    - {path: /etc/microserver/monitoring/provisioning, kind: directory, uid: 0}
+    - {path: /etc/microserver/monitoring/provisioning/datasources, kind: directory, uid: 0}
+    - {path: /etc/microserver/monitoring/provisioning/datasources/tempo.yaml, kind: file, uid: 0}
+    - {path: /var/lib/microserver, kind: directory, uid: 0}
+    - {path: /var/lib/microserver/tempo, kind: directory, uid: 10001}
+    - {path: /usr/local/libexec, kind: directory, uid: 0}
+    - {path: /usr/local/libexec/microserver-telemetry-guard.py, kind: file, uid: 0}
+  register: microserver_telemetry_paths
+
+- name: Reject untrusted receiver paths and ownership drift
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (not item.stat.islnk | default(false) and item.stat.uid == item.item.uid and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+      - not item.stat.exists or ((item.stat.isdir | default(false)) if item.item.kind == 'directory' else (item.stat.isreg | default(false)))
+  loop: '{{ microserver_telemetry_paths.results }}'
+
+- name: Require the already installed base configuration
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+  loop: '{{ microserver_telemetry_paths.results }}'
+  when: item.item.path in ['/etc/microserver/ui/nginx.conf', '/etc/microserver/monitoring/compose.yaml', '/etc/microserver/monitoring/provisioning/datasources', '/var/lib/microserver', '/usr/local/libexec']
+
+- name: Require unused receiver ports before first installation
+  ansible.builtin.wait_for:
+    host: '{{ item.host }}'
+    port: '{{ item.port }}'
+    state: stopped
+    timeout: 1
+    connect_timeout: 1
+  loop:
+    - {host: '{{ microserver_ui_address }}', port: 8080}
+    - {host: 127.0.0.1, port: 3200}
+    - {host: 127.0.0.1, port: 4318}
+    - {host: 127.0.0.1, port: 9096}
+  when:
+    - not ansible_check_mode
+    - not (microserver_telemetry_paths.results | selectattr('item.path', 'equalto', '/etc/microserver/monitoring/tempo.yaml') | first).stat.exists
+
+- name: Create only the new bounded trace state directory
+  ansible.builtin.file:
+    path: /var/lib/microserver/tempo
+    state: directory
+    owner: '10001'
+    group: '10001'
+    mode: '0700'
+
+- name: Install the component drift validator
+  ansible.builtin.copy:
+    src: microserver-telemetry-guard.py
+    dest: /usr/local/libexec/microserver-telemetry-guard.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Inspect only the selected trace image identity
+  ansible.builtin.command:
+    argv: [/usr/bin/docker, image, inspect, --format, "{{ '{{.Id}}' }}", '{{ microserver_tempo_image }}']
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  register: microserver_tempo_image_state
+
+- name: Fetch only the pinned trace backend when missing
+  ansible.builtin.command:
+    argv: [/usr/bin/timeout, '180', /usr/bin/docker, pull, '{{ microserver_tempo_image }}']
+  changed_when: true
+  when: microserver_tempo_image_state.rc != 0 and not ansible_check_mode
+
+- name: Validate and install the loopback trace backend configuration
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/config/tempo.yaml'
+    dest: /etc/microserver/monitoring/tempo.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: '/usr/bin/timeout 60 /usr/bin/docker run --rm --pull never --network none --read-only --user 0:0 --cap-drop ALL --security-opt no-new-privileges --memory 256m --cpus 0.25 --pids-limit 64 --volume %s:/config.yaml:ro {{ microserver_tempo_image }} -config.file=/config.yaml -config.verify=true'
+
+- name: Provision the loopback Tempo datasource
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/config/datasources.traces.yaml'
+    dest: /etc/microserver/monitoring/provisioning/datasources/tempo.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+
+- name: Add Tempo without modifying existing service definitions
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: /etc/microserver/monitoring/compose.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/bin/python3 /usr/local/libexec/microserver-telemetry-guard.py compose %s
+
+- name: Start Tempo and reload only Grafana provisioning
+  ansible.builtin.command:
+    argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, --force-recreate, tempo, grafana]
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Verify each retained backend before opening ingestion
+  ansible.builtin.uri:
+    url: '{{ item }}'
+    return_content: false
+    status_code: 200
+    timeout: 5
+  loop:
+    - http://127.0.0.1:9090/-/ready
+    - http://127.0.0.1:3100/ready
+    - http://127.0.0.1:3200/ready
+    - http://127.0.0.1:3000/api/health
+  register: microserver_backend_readiness
+  until: microserver_backend_readiness.status | default(0) == 200
+  retries: 20
+  delay: 3
+  when: not ansible_check_mode
+
+- name: Add only the source-restricted ingestion virtual host
+  ansible.builtin.template:
+    src: ui-nginx.conf.j2
+    dest: /etc/microserver/ui/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/bin/python3 /usr/local/libexec/microserver-telemetry-guard.py nginx %s
+
+- name: Reload the validated intranet proxy
+  ansible.builtin.systemd_service:
+    name: microserver-ui.service
+    state: reloaded
+  when: not ansible_check_mode
+
+- name: Verify that the NAS itself cannot use the workstation ingestion listener
+  ansible.builtin.uri:
+    url: 'http://{{ microserver_ui_address }}:8080/ready'
+    return_content: false
+    status_code: 403
+    timeout: 5
+  when: not ansible_check_mode

@@ -1,10 +1,13 @@
 ---
+microserver_nfs_private_ipv4_pattern: '^(10[.](?:[0-9]{1,3}[.]){2}[0-9]{1,3}|192[.]168[.][0-9]{1,3}[.][0-9]{1,3}|172[.](?:1[6-9]|2[0-9]|3[01])[.][0-9]{1,3}[.][0-9]{1,3})$'
+microserver_nfs_fqdn_pattern: '(?i)^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$'
 # Read the existing canonical locks; do not introduce another set of image pins.
 microserver_observability_lock: "{{ lookup('ansible.builtin.file', playbook_dir + '/../observability/versions.json') | from_json }}"
 microserver_prometheus_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'prometheus') | first).image }}"
 microserver_grafana_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'grafana') | first).image }}"
 microserver_alertmanager_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'alertmanager') | first).image }}"
 microserver_loki_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'loki') | first).image }}"
+microserver_tempo_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'tempo') | first).image }}"
 microserver_vector_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'vector') | first).image }}"
 microserver_unpoller_image: "{{ (microserver_observability_lock.images | selectattr('component', 'equalto', 'unpoller') | first).image }}"
 microserver_unifi_insights: "{{ lookup('ansible.builtin.file', playbook_dir + '/../observability/unpoller/lock.json') | from_json }}"

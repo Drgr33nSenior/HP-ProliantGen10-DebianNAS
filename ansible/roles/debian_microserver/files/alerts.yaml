@@ -31,3 +31,40 @@ groups:
         for: 5m
         labels: {severity: warning}
         annotations: {summary: 'UniFi gateway performance polling is unavailable or stale'}
+  - name: microserver_zfs
+    rules:
+      - alert: MicroServerZFSMetricsUnavailable
+        expr: '(microserver_zfs_collection_success{job="microserver-node"} != 1 or absent(microserver_zfs_collection_success{job="microserver-node"}) or time() - microserver_zfs_collection_timestamp_seconds{job="microserver-node"} > 180) and on(job) up{job="microserver-node"} == 1'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'MicroServer ZFS metrics are unavailable or stale'}
+      - alert: MicroServerZFSPoolUnhealthy
+        expr: 'microserver_zfs_pool_healthy{job="microserver-node"} != 1'
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'MicroServer ZFS pool is not ONLINE'}
+      - alert: MicroServerZFSDeviceUnhealthy
+        expr: 'microserver_zfs_vdev_healthy{job="microserver-node"} != 1'
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'MicroServer ZFS device is unhealthy'}
+      - alert: MicroServerZFSDeviceErrors
+        expr: 'microserver_zfs_vdev_read_errors_total{job="microserver-node"} > 0 or microserver_zfs_vdev_write_errors_total{job="microserver-node"} > 0 or microserver_zfs_vdev_checksum_errors_total{job="microserver-node"} > 0'
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'MicroServer ZFS device reports read, write or checksum errors'}
+      - alert: MicroServerZFSDataErrors
+        expr: 'microserver_zfs_pool_data_errors{job="microserver-node"} > 0 or microserver_zfs_scan_errors{job="microserver-node"} > 0'
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'MicroServer ZFS reports data or scan errors'}
+      - alert: MicroServerZFSPoolSpaceLow
+        expr: 'microserver_zfs_pool_capacity_ratio{job="microserver-node"} > 0.8'
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: 'MicroServer ZFS pool is more than 80% allocated'}
+      - alert: MicroServerZFSPoolSpaceCritical
+        expr: 'microserver_zfs_pool_capacity_ratio{job="microserver-node"} > 0.9'
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'MicroServer ZFS pool is more than 90% allocated'}

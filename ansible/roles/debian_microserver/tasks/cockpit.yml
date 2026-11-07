@@ -1,0 +1,365 @@
+---
+- name: Inspect existing protected Cockpit parent directories
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop: [/etc/apt, /etc/apt/sources.list.d, /etc/apt/preferences.d, /usr/share/keyrings, /etc/microserver, /etc/microserver/ui, /etc/cockpit, /etc/systemd/system]
+  register: microserver_cockpit_parents
+
+- name: Require trusted parent directories
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isdir | default(false) and not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+  loop: '{{ microserver_cockpit_parents.results }}'
+
+- name: Refuse unreviewed existing Cockpit configuration or vendor units
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - /etc/apt/sources.list.d/microserver-45drives.list
+    - /etc/apt/preferences.d/microserver-45drives
+    - /usr/share/keyrings/microserver-45drives.asc
+    - /etc/cockpit/cockpit.conf
+    - /etc/cockpit/microserver-users
+    - /etc/microserver/cockpit-management-only
+    - /etc/systemd/system/cockpit.socket.d
+    - /etc/systemd/system/houston-dbus.service
+    - /etc/systemd/system/houston-alerts-webhook.service
+    - /etc/systemd/system/houston-zfs-storage-alert.service
+    - /etc/systemd/system/houston-zfs-storage-alert.timer
+    - /etc/systemd/system/houston-dbus.service.d
+    - /etc/systemd/system/houston-alerts-webhook.service.d
+    - /etc/systemd/system/houston-zfs-storage-alert.service.d
+    - /etc/systemd/system/houston-zfs-storage-alert.timer.d
+    - /etc/zfs/zed.d/data-notify_zed_dbus_notify.sh
+    - /etc/zfs/zed.d/pool_import-led_zed_dbus_notify.sh
+    - /etc/zfs/zed.d/resilver_finish-notify_zed_dbus_notify.sh
+    - /etc/zfs/zed.d/scrub_finish-notify_zed_dbus_notify.sh
+    - /etc/zfs/zed.d/statechange-notify_zed_dbus_notify.sh
+    - /etc/zfs/zed.d/vdev_attach-led_zed_dbus_notify.sh
+    - /etc/zfs/zed.d/vdev_clear-led_zed_dbus_notify.sh
+  register: microserver_cockpit_new_paths
+
+- name: Require a fresh management component
+  ansible.builtin.assert:
+    that: [not item.stat.exists and not item.stat.islnk | default(false)]
+  loop: '{{ microserver_cockpit_new_paths.results }}'
+
+- name: Retain the existing public proxy and TLS metadata
+  ansible.builtin.tempfile:
+    state: directory
+    path: /var/lib/microserver
+    prefix: cockpit-backup.
+  register: microserver_cockpit_backup
+
+- name: Back up only public configuration files
+  ansible.builtin.copy:
+    src: '{{ item.source }}'
+    dest: '{{ microserver_cockpit_backup.path }}/{{ item.name }}'
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - {source: /etc/microserver/ui/nginx.conf, name: nginx.conf}
+    - {source: /etc/microserver/ui/tls.json, name: tls.json}
+    - {source: /usr/local/libexec/microserver-ui-tls.py, name: microserver-ui-tls.py}
+
+- name: Install and qualify Cockpit behind the existing proxy
+  block:
+    - name: Create the loopback listener drop-in before installing any web service
+      ansible.builtin.file:
+        path: /etc/systemd/system/cockpit.socket.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Bind Cockpit only to the unused loopback port
+      ansible.builtin.copy:
+        src: microserver-cockpit-socket.conf
+        dest: /etc/systemd/system/cockpit.socket.d/microserver.conf
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Record that existing NAS monitoring provides notifications
+      ansible.builtin.copy:
+        content: "The vendor notification services remain inactive; the existing NAS monitoring stack provides alerts.\n"
+        dest: /etc/microserver/cockpit-management-only
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Prepare notification service overrides before vendor maintainer scripts run
+      ansible.builtin.file:
+        path: '/etc/systemd/system/{{ item }}.d'
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop: [houston-dbus.service, houston-alerts-webhook.service, houston-zfs-storage-alert.service, houston-zfs-storage-alert.timer]
+    - name: Keep the additional vendor notification services inactive
+      ansible.builtin.copy:
+        content: "[Unit]\nConditionPathExists=!/etc/microserver/cockpit-management-only\n"
+        dest: '/etc/systemd/system/{{ item }}.d/microserver.conf'
+        owner: root
+        group: root
+        mode: '0644'
+      loop: [houston-dbus.service, houston-alerts-webhook.service, houston-zfs-storage-alert.service, houston-zfs-storage-alert.timer]
+    - name: Install the scoped public vendor signing key
+      ansible.builtin.copy:
+        src: 45drives-archive.asc
+        dest: /usr/share/keyrings/microserver-45drives.asc
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Permit only the three required packages from the vendor repository
+      ansible.builtin.copy:
+        content: "Package: cockpit-zfs python3-libzfs cockpit-alerts\nPin: origin repo.45drives.com\nPin-Priority: 990\n\nPackage: *\nPin: origin repo.45drives.com\nPin-Priority: -1\n"
+        dest: /etc/apt/preferences.d/microserver-45drives
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Add the authenticated Debian 13 vendor package source
+      ansible.builtin.copy:
+        content: "deb [arch=amd64 signed-by=/usr/share/keyrings/microserver-45drives.asc] https://repo.45drives.com/enterprise/debian trixie main\n"
+        dest: /etc/apt/sources.list.d/microserver-45drives.list
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Refresh signed package metadata
+      ansible.builtin.apt:
+        update_cache: true
+    - name: Read only the selected vendor package integrity metadata
+      ansible.builtin.command:
+        argv: [/usr/bin/apt-cache, show, --no-all-versions, '{{ item.package }}']
+      changed_when: false
+      register: microserver_vendor_metadata
+      loop:
+        - {package: cockpit-zfs=1.3.0-1trixie, sha256: f5d75911a1c67719ece9568b78e95de3d58ccd22142367c19ba8d5c0e2ad752d}
+        - {package: python3-libzfs=2.4.1-4trixie, sha256: 5679b8d6e5109532e83f211c56fe431950009f0bc87eba5dbe13a62f5ebc3a12}
+        - {package: cockpit-alerts=4.0.25-2trixie, sha256: 2f94e45ff6b63e79f94ea9c8724b5f88b3ac4f2216a6cf353603174cc0b0511f}
+    - name: Require the reviewed vendor package digests
+      ansible.builtin.assert:
+        that: ["item.stdout is search('(?m)^SHA256: ' + item.item.sha256 + '$')"]
+      loop: '{{ microserver_vendor_metadata.results }}'
+    - name: Simulate the management package installation
+      ansible.builtin.command:
+        argv: [/usr/bin/apt-get, -s, --no-install-recommends, install, cockpit-zfs=1.3.0-1trixie, python3-libzfs=2.4.1-4trixie, cockpit-alerts=4.0.25-2trixie]
+      register: microserver_cockpit_plan
+      changed_when: false
+      environment: {LC_ALL: C}
+    - name: Reject package removals and storage kernel or network manager changes
+      ansible.builtin.assert:
+        that:
+          - microserver_cockpit_plan.stdout is not search('(?m)^Remv ')
+          - microserver_cockpit_plan.stdout is not search('(?m)^Inst (linux-|zfs-|zfsutils-|libzfs|libzpool|libnvpair|libuutil|network-manager)')
+    - name: Inspect existing permission overrides for the new vendor hooks
+      ansible.builtin.command:
+        argv: [/usr/bin/dpkg-statoverride, --list, '/etc/zfs/zed.d/{{ item }}']
+      changed_when: false
+      register: microserver_vendor_override
+      failed_when: microserver_vendor_override.rc != 1
+      loop:
+        - data-notify_zed_dbus_notify.sh
+        - pool_import-led_zed_dbus_notify.sh
+        - resilver_finish-notify_zed_dbus_notify.sh
+        - scrub_finish-notify_zed_dbus_notify.sh
+        - statechange-notify_zed_dbus_notify.sh
+        - vdev_attach-led_zed_dbus_notify.sh
+        - vdev_clear-led_zed_dbus_notify.sh
+    - name: Retain non-executable vendor hook permissions across package installations
+      ansible.builtin.command:
+        argv: [/usr/bin/dpkg-statoverride, --add, root, root, '0644', '/etc/zfs/zed.d/{{ item.item }}']
+      changed_when: true
+      loop: '{{ microserver_vendor_override.results }}'
+    - name: Install native Cockpit and the pinned ZFS management plugin
+      ansible.builtin.apt:
+        name: [cockpit-zfs=1.3.0-1trixie, python3-libzfs=2.4.1-4trixie, cockpit-alerts=4.0.25-2trixie]
+        state: present
+        install_recommends: false
+        fail_on_autoremove: true
+        policy_rc_d: 101
+        force_apt_get: true
+      environment: {DEBIAN_FRONTEND: noninteractive}
+    - name: Disable only the newly installed vendor notification and LED hooks
+      ansible.builtin.file:
+        path: '/etc/zfs/zed.d/{{ item }}'
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - data-notify_zed_dbus_notify.sh
+        - pool_import-led_zed_dbus_notify.sh
+        - resilver_finish-notify_zed_dbus_notify.sh
+        - scrub_finish-notify_zed_dbus_notify.sh
+        - statechange-notify_zed_dbus_notify.sh
+        - vdev_attach-led_zed_dbus_notify.sh
+        - vdev_clear-led_zed_dbus_notify.sh
+    - name: Disable the additional notification units at boot
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, disable, houston-dbus.service, houston-alerts-webhook.service, houston-zfs-storage-alert.service, houston-zfs-storage-alert.timer]
+      changed_when: true
+    - name: Create the native Cockpit configuration directory
+      ansible.builtin.file:
+        path: /etc/cockpit
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Configure trusted proxy headers and the single HTTPS origin
+      ansible.builtin.template:
+        src: cockpit.conf.j2
+        dest: /etc/cockpit/cockpit.conf
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Allow only the selected existing administrator to log into Cockpit
+      ansible.builtin.copy:
+        content: "{{ microserver_cockpit_admin }}\n"
+        dest: /etc/cockpit/microserver-users
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Restrict Cockpit login while preserving the packaged PAM authentication stack
+      ansible.builtin.blockinfile:
+        path: /etc/pam.d/cockpit
+        insertbefore: BOF
+        marker: '# {mark} MicroServer administrator allowlist'
+        block: auth requisite pam_listfile.so item=user sense=allow file=/etc/cockpit/microserver-users onerr=fail
+    - name: Read the selected administrator UID for the existing user manager
+      ansible.builtin.command:
+        argv: [/usr/bin/id, -u, '{{ microserver_cockpit_admin }}']
+      changed_when: false
+      register: microserver_cockpit_admin_uid
+    - name: Require a non-root administrator UID
+      ansible.builtin.assert:
+        that:
+          - microserver_cockpit_admin_uid.stdout is match('^[1-9][0-9]*$')
+    - name: Inspect the selected administrator runtime directory
+      ansible.builtin.stat:
+        path: '/run/user/{{ microserver_cockpit_admin_uid.stdout }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      register: microserver_cockpit_admin_runtime
+    - name: Require the existing administrator user session
+      ansible.builtin.assert:
+        that:
+          - microserver_cockpit_admin_runtime.stat.isdir | default(false)
+          - not microserver_cockpit_admin_runtime.stat.islnk | default(false)
+          - microserver_cockpit_admin_runtime.stat.uid == microserver_cockpit_admin_uid.stdout | int
+          - microserver_cockpit_admin_runtime.stat.mode == '0700'
+    - name: Refresh the existing user manager and start its newly installed D-Bus units
+      ansible.builtin.systemd_service:
+        name: '{{ item }}'
+        scope: user
+        state: started
+        daemon_reload: '{{ item == "dbus.socket" }}'
+      become_user: '{{ microserver_cockpit_admin }}'
+      environment:
+        XDG_RUNTIME_DIR: '/run/user/{{ microserver_cockpit_admin_uid.stdout }}'
+      loop: [dbus.socket, dbus.service]
+    - name: Inspect the administrator D-Bus socket before enabling the UI
+      ansible.builtin.stat:
+        path: '/run/user/{{ microserver_cockpit_admin_uid.stdout }}/bus'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      register: microserver_cockpit_user_bus
+    - name: Require the administrator D-Bus socket
+      ansible.builtin.assert:
+        that:
+          - microserver_cockpit_user_bus.stat.issock | default(false)
+          - microserver_cockpit_user_bus.stat.uid == microserver_cockpit_admin_uid.stdout | int
+    - name: Enable the loopback Cockpit socket
+      ansible.builtin.systemd_service:
+        name: cockpit.socket
+        enabled: true
+        state: started
+        daemon_reload: true
+    - name: Verify unauthenticated access cannot create a Cockpit session
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9091/cockpit/login
+        headers: {Host: 'microserver.{{ microserver_ui_domain }}', X-Forwarded-Proto: https}
+        status_code: 401
+        return_content: false
+    - name: Install the extended public TLS verifier
+      ansible.builtin.copy:
+        src: microserver-ui-tls.py
+        dest: /usr/local/libexec/microserver-ui-tls.py
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Include the management hostname in certificate and renewal acceptance
+      ansible.builtin.copy:
+        content: "{{ {'address': microserver_ui_address, 'domain': microserver_ui_domain, 'cockpit': true} | to_json }}\n"
+        dest: /etc/microserver/ui/tls.json
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Add only the management virtual host to the retained proxy profile
+      ansible.builtin.template:
+        src: ui-nginx.conf.j2
+        dest: /etc/microserver/ui/nginx.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: /usr/bin/python3 /usr/local/libexec/microserver-ui-tls.py nginx %s
+    - name: Reload the validated intranet proxy
+      ansible.builtin.systemd_service:
+        name: microserver-ui.service
+        state: reloaded
+    - name: Verify existing UIs and the authenticated management endpoint through trusted HTTPS
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-ui-tls.py, probe]
+      changed_when: false
+    - name: Verify the packaged Python ZFS binding can load without changing storage
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -c, 'import libzfs; print("ZFS_BINDING=loaded")']
+      changed_when: false
+    - name: Require the vendor notification units to remain inactive
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, is-active, '{{ item }}']
+      changed_when: false
+      register: microserver_vendor_unit
+      failed_when: microserver_vendor_unit.stdout != 'inactive'
+      loop: [houston-dbus.service, houston-alerts-webhook.service, houston-zfs-storage-alert.service, houston-zfs-storage-alert.timer]
+    - name: Report management endpoint acceptance
+      ansible.builtin.debug:
+        msg: 'COCKPIT=verified; URL=https://microserver.{{ microserver_ui_domain }}; VENDOR_NOTIFICATIONS=inactive; DATASETS_AND_EXPORTS=unchanged. Retain {{ microserver_cockpit_backup.path }}.'
+  rescue:
+    - name: Stop and disable the newly installed management socket
+      ansible.builtin.systemd_service:
+        name: cockpit.socket
+        enabled: false
+        state: stopped
+        daemon_reload: true
+      failed_when: false
+    - name: Stop the newly installed management web service
+      ansible.builtin.systemd_service:
+        name: cockpit.service
+        state: stopped
+      failed_when: false
+    - name: Restore the prior public proxy and TLS metadata
+      ansible.builtin.copy:
+        src: '{{ microserver_cockpit_backup.path }}/{{ item.name }}'
+        dest: '{{ item.destination }}'
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - {name: nginx.conf, destination: /etc/microserver/ui/nginx.conf}
+        - {name: tls.json, destination: /etc/microserver/ui/tls.json}
+        - {name: microserver-ui-tls.py, destination: /usr/local/libexec/microserver-ui-tls.py}
+    - name: Reload the retained intranet virtual hosts
+      ansible.builtin.systemd_service:
+        name: microserver-ui.service
+        state: reloaded
+    - name: Report the failed management qualification
+      ansible.builtin.fail:
+        msg: 'Cockpit qualification failed. Prior proxy and TLS configuration were restored; packages and diagnostics remain. Retain {{ microserver_cockpit_backup.path }} and the owner log before retrying.'

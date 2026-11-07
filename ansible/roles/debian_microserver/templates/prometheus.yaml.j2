@@ -1,7 +1,11 @@
 global:
   scrape_interval: 30s
   evaluation_interval: 30s
+{% if microserver_workstation_rules_enabled | bool %}
+rule_files: [/etc/prometheus/alerts.yaml, /etc/prometheus/workstation-alerts.yaml]
+{% else %}
 rule_files: [/etc/prometheus/alerts.yaml]
+{% endif %}
 alerting:
   alertmanagers:
     - static_configs:

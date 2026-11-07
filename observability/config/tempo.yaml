@@ -1,0 +1,31 @@
+# Single-process Tempo 3; all endpoints remain on NAS loopback.
+target: all
+server:
+  http_listen_address: 127.0.0.1
+  http_listen_port: 3200
+  grpc_listen_address: 127.0.0.1
+  grpc_listen_port: 9096
+  log_level: warn
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http: {endpoint: '127.0.0.1:4318'}
+storage:
+  trace:
+    backend: local
+    wal: {path: /var/tempo/wal}
+    local: {path: /var/tempo/blocks}
+    pool: {max_workers: 2, queue_depth: 64}
+query_frontend:
+  max_outstanding_per_tenant: 32
+  response_consumers: 1
+  search: {concurrent_jobs: 2, max_duration: 24h}
+  trace_by_id: {query_shards: 2, concurrent_shards: 1}
+overrides:
+  defaults:
+    ingestion: {rate_limit_bytes: 1048576, burst_size_bytes: 2097152}
+    global: {max_bytes_per_trace: 1048576}
+    compaction: {block_retention: 72h}
+    read: {max_search_duration: 24h}
+usage_report: {reporting_enabled: false}

@@ -1,0 +1,16 @@
+---
+- name: Inspect the commissioned Houston integration marker
+  ansible.builtin.stat:
+    path: /etc/microserver/houston-alerts.json
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_existing_houston
+
+- name: Preserve commissioned local notifications during monitoring renders
+  ansible.builtin.assert:
+    that:
+      - not microserver_existing_houston.stat.islnk | default(false)
+      - not microserver_existing_houston.stat.exists or microserver_houston_alerts_enabled | bool
+      - not microserver_houston_alerts_enabled | bool or (microserver_existing_houston.stat.exists and microserver_existing_houston.stat.isreg | default(false) and not microserver_existing_houston.stat.islnk | default(false) and microserver_existing_houston.stat.uid == 0)
+    fail_msg: Commission owner-houston.yml first and retain microserver_houston_alerts_enabled in later profiles.

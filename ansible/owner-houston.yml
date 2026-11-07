@@ -1,0 +1,337 @@
+---
+- name: Owner-run local 45Drives notifications and isolated ZFS acceptance
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - roles/debian_microserver/defaults/main.yml
+    - roles/debian_microserver/vars/main.yml
+  vars:
+    microserver_acceptance_operation: integrate
+    microserver_houston_public_files:
+      - /etc/microserver/monitoring/alertmanager.yaml
+      - /etc/dbus-1/system.d/org._45drives.Houston.conf
+      - /etc/systemd/system/houston-dbus.service.d/microserver.conf
+      - /etc/systemd/system/houston-alerts-webhook.service.d/microserver.conf
+    microserver_houston_helpers:
+      - microserver-houston-dbus.py
+      - microserver-houston-webhook.py
+      - microserver-houston-verify.py
+      - microserver-zfs-write-test.py
+  pre_tasks:
+    - name: Require the explicitly selected commissioned NAS and owner operation
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - ansible_play_hosts_all | length == 1
+          - ansible_facts.hostname == 'microserver'
+          - ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - microserver_pool_name == 'nas'
+          - microserver_pool_guid is match('^[0-9]{1,20}$')
+          - microserver_houston_alerts_enabled | bool
+          - microserver_cockpit_enabled | bool and microserver_ui_tls_enabled | bool
+          - microserver_cockpit_admin is match('^[a-z_][a-z0-9_-]{0,31}$') and microserver_cockpit_admin != 'root'
+          - microserver_acceptance_operation in ['integrate', 'verify', 'write']
+          - not ansible_check_mode
+    - name: Inspect trusted parents and existing public configuration
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+        checksum_algorithm: sha256
+        get_mime: false
+      loop: '{{ ["/etc", "/etc/microserver", "/etc/microserver/monitoring", "/etc/dbus-1", "/etc/dbus-1/system.d", "/etc/systemd/system", "/etc/systemd/system/houston-dbus.service.d", "/etc/systemd/system/houston-alerts-webhook.service.d", "/usr/local", "/usr/local/libexec", "/var/lib", "/var/lib/microserver"] + microserver_houston_public_files }}'
+      register: microserver_houston_paths
+    - name: Require root-owned paths without writable groups or symlinks
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists and not item.stat.islnk | default(false)
+          - item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$')
+          - item.stat.isdir | default(false) or item.stat.isreg | default(false)
+      loop: '{{ microserver_houston_paths.results }}'
+    - name: Inspect the public integration marker
+      ansible.builtin.stat:
+        path: /etc/microserver/houston-alerts.json
+        follow: false
+        get_checksum: false
+        get_mime: false
+      register: microserver_houston_marker
+    - name: Require the correct commissioning state
+      ansible.builtin.assert:
+        that:
+          - not microserver_houston_marker.stat.islnk | default(false)
+          - (microserver_acceptance_operation == 'integrate') == (not microserver_houston_marker.stat.exists)
+          - not microserver_houston_marker.stat.exists or (microserver_houston_marker.stat.isreg | default(false) and microserver_houston_marker.stat.uid == 0)
+    - name: Verify the completed ZFS upgrade and retained NAS health
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-upgrade.py, verify, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+      changed_when: false
+      no_log: true
+    - name: Inspect commissioned helper integrity on later acceptance runs
+      ansible.builtin.stat:
+        path: '/usr/local/libexec/{{ item }}'
+        follow: false
+        checksum_algorithm: sha256
+        get_mime: false
+      loop: '{{ microserver_houston_helpers }}'
+      register: microserver_houston_existing_helpers
+      when: microserver_acceptance_operation != 'integrate'
+    - name: Require the reviewed helper code before privileged repeat execution
+      ansible.builtin.assert:
+        that:
+          - item.stat.isreg | default(false) and not item.stat.islnk | default(false)
+          - item.stat.uid == 0 and item.stat.mode == '0755'
+          - item.stat.checksum == (lookup('ansible.builtin.file', playbook_dir + '/roles/debian_microserver/files/' + item.item, rstrip=false) | hash('sha256'))
+      loop: '{{ microserver_houston_existing_helpers.results }}'
+      when: microserver_acceptance_operation != 'integrate'
+  tasks:
+    - name: Commission local-only Houston delivery
+      when: microserver_acceptance_operation == 'integrate'
+      block:
+        - name: Require the selected existing administrator
+          ansible.builtin.command:
+            argv: [/usr/bin/id, '{{ microserver_cockpit_admin }}']
+          changed_when: false
+        - name: Require the reviewed unmodified vendor package before integration
+          ansible.builtin.command:
+            argv: [/usr/bin/dpkg, --verify, cockpit-alerts]
+          changed_when: false
+          register: microserver_houston_package_verify
+          failed_when: microserver_houston_package_verify.rc != 0 or microserver_houston_package_verify.stdout | length != 0
+        - name: Require both notification units to be inactive before first commissioning
+          ansible.builtin.command:
+            argv: [/usr/bin/systemctl, is-active, '{{ item }}']
+          loop: [houston-dbus.service, houston-alerts-webhook.service]
+          changed_when: false
+          register: microserver_houston_inactive
+          failed_when: microserver_houston_inactive.rc != 3 or microserver_houston_inactive.stdout != 'inactive'
+        - name: Read only the existing public management-only service overrides
+          ansible.builtin.slurp:
+            src: '/etc/systemd/system/{{ item }}.d/microserver.conf'
+          loop: [houston-dbus.service, houston-alerts-webhook.service]
+          register: microserver_houston_prior_conditions
+        - name: Require the commissioned management-only conditions
+          ansible.builtin.assert:
+            that:
+              - item.content | b64decode == "[Unit]\nConditionPathExists=!/etc/microserver/cockpit-management-only\n"
+          loop: '{{ microserver_houston_prior_conditions.results }}'
+        - name: Require the reviewed Alertmanager public baseline
+          ansible.builtin.assert:
+            that:
+              - (microserver_houston_paths.results | selectattr('item', 'equalto', '/etc/microserver/monitoring/alertmanager.yaml') | first).stat.checksum == microserver_houston_previous_alertmanager_sha256
+        - name: Inspect conventional compatibility and database directories
+          ansible.builtin.stat:
+            path: '{{ item }}'
+            follow: false
+            get_checksum: false
+            get_mime: false
+          loop: [/etc/prometheus, /etc/alertmanager, /var/lib/sqlite, /var/lib/sqlite/45drives]
+          register: microserver_houston_compat_parents
+        - name: Require absent or trusted compatibility parents
+          ansible.builtin.assert:
+            that:
+              - not item.stat.exists or (item.stat.isdir | default(false) and not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+              - not item.stat.islnk | default(false)
+          loop: '{{ microserver_houston_compat_parents.results }}'
+        - name: Inspect new integration paths without following links
+          ansible.builtin.stat:
+            path: '{{ item }}'
+            follow: false
+            get_checksum: false
+            get_mime: false
+          loop: '{{ ["/etc/prometheus/prometheus.yml", "/etc/alertmanager/alertmanager.yml"] + (microserver_houston_helpers | map("regex_replace", "^", "/usr/local/libexec/") | list) }}'
+          register: microserver_houston_new_paths
+        - name: Refuse to replace existing unrelated integration paths
+          ansible.builtin.assert:
+            that: [not item.stat.exists, not item.stat.islnk | default(false)]
+          loop: '{{ microserver_houston_new_paths.results }}'
+        - name: Require an unused dedicated receiver account name
+          ansible.builtin.command:
+            argv: [/usr/bin/getent, passwd, microserver-alerts]
+          changed_when: false
+          register: microserver_houston_account
+          failed_when: microserver_houston_account.rc != 2
+        - name: Retain public configuration for bounded recovery
+          ansible.builtin.tempfile:
+            state: directory
+            path: /var/lib/microserver
+            prefix: houston-backup.
+          register: microserver_houston_backup
+        - name: Back up only the four public integration files
+          ansible.builtin.copy:
+            src: '{{ item }}'
+            dest: '{{ microserver_houston_backup.path }}/{{ ansible_loop.index0 }}'
+            remote_src: true
+            owner: root
+            group: root
+            mode: '0600'
+          loop: '{{ microserver_houston_public_files }}'
+          loop_control: {extended: true}
+        - name: Apply and qualify the local receiver with recovery
+          block:
+            - name: Create the dedicated unprivileged HTTP identity
+              ansible.builtin.user:
+                name: microserver-alerts
+                system: true
+                create_home: false
+                home: /nonexistent
+                shell: /usr/sbin/nologin
+            - name: Install bounded owner helpers
+              ansible.builtin.copy:
+                src: 'roles/debian_microserver/files/{{ item }}'
+                dest: '/usr/local/libexec/{{ item }}'
+                owner: root
+                group: root
+                mode: '0755'
+              loop: '{{ microserver_houston_helpers }}'
+            - name: Create protected notification data and compatibility directories
+              ansible.builtin.file:
+                path: '{{ item.path }}'
+                state: directory
+                owner: root
+                group: root
+                mode: '{{ item.mode }}'
+              loop:
+                - {path: /var/lib/sqlite, mode: '0755'}
+                - {path: /var/lib/sqlite/45drives, mode: '0700'}
+                - {path: /etc/prometheus, mode: '0755'}
+                - {path: /etc/alertmanager, mode: '0755'}
+            - name: Restrict the existing vendor D-Bus name to the owner and forwarder
+              ansible.builtin.template:
+                src: roles/debian_microserver/templates/microserver-houston-policy.conf.j2
+                dest: /etc/dbus-1/system.d/org._45drives.Houston.conf
+                owner: root
+                group: root
+                mode: '0644'
+            - name: Install service isolation without enabling duplicate storage monitors
+              ansible.builtin.copy:
+                src: 'roles/debian_microserver/files/microserver-{{ item }}.conf'
+                dest: '/etc/systemd/system/{{ item.replace("webhook", "alerts-webhook") }}.service.d/microserver.conf'
+                owner: root
+                group: root
+                mode: '0644'
+              loop: [houston-dbus, houston-webhook]
+            - name: Record local-only notification commissioning
+              ansible.builtin.copy:
+                content: '{{ {"delivery": "local-ui-only", "admin": microserver_cockpit_admin, "version": 1} | to_nice_json }}'
+                dest: /etc/microserver/houston-alerts.json
+                owner: root
+                group: root
+                mode: '0644'
+            - name: Read the canonical local-only Alertmanager source
+              ansible.builtin.set_fact:
+                microserver_houston_role_path: '{{ playbook_dir }}/roles/debian_microserver'
+            - name: Render the existing Alertmanager route with Houston delivery
+              ansible.builtin.template:
+                src: roles/debian_microserver/templates/alertmanager.yaml.j2
+                dest: /etc/microserver/monitoring/alertmanager.yaml
+                owner: root
+                group: root
+                mode: '0644'
+              vars:
+                role_path: '{{ microserver_houston_role_path }}'
+            - name: Validate Alertmanager through its already installed pinned image
+              ansible.builtin.command:
+                argv: [/usr/bin/docker, run, --rm, --pull, never, --network, none, --read-only, --cap-drop, ALL, --security-opt, no-new-privileges, --memory, 128m, --pids-limit, '32', --mount, 'type=bind,source=/etc/microserver/monitoring/alertmanager.yaml,target=/fixture.yaml,readonly', --entrypoint, /bin/amtool, '{{ microserver_alertmanager_image }}', check-config, /fixture.yaml]
+              changed_when: false
+            - name: Expose canonical configuration paths for vendor status checks
+              ansible.builtin.file:
+                src: '{{ item.src }}'
+                dest: '{{ item.dest }}'
+                state: link
+                owner: root
+                group: root
+              loop:
+                - {src: /etc/microserver/monitoring/prometheus.yaml, dest: /etc/prometheus/prometheus.yml}
+                - {src: /etc/microserver/monitoring/alertmanager.yaml, dest: /etc/alertmanager/alertmanager.yml}
+            - name: Reload system D-Bus policy without restarting the bus
+              ansible.builtin.systemd_service:
+                name: dbus.service
+                state: reloaded
+            - name: Enable only the local notification bridge and receiver
+              ansible.builtin.systemd_service:
+                name: '{{ item }}'
+                daemon_reload: true
+                enabled: true
+                state: started
+              loop: [houston-dbus.service, houston-alerts-webhook.service]
+            - name: Recreate only Alertmanager to refresh its read-only configuration bind
+              ansible.builtin.command:
+                argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, --force-recreate, alertmanager]
+              changed_when: true
+            - name: Wait for the local receiver
+              ansible.builtin.wait_for: {host: 127.0.0.1, port: 5002, timeout: 30}
+            - name: Wait for Alertmanager readiness
+              ansible.builtin.uri: {url: 'http://127.0.0.1:9093/-/ready', status_code: 200}
+              register: microserver_houston_ready
+              until: microserver_houston_ready.status | default(0) == 200
+              retries: 15
+              delay: 2
+            - name: Verify synthetic firing and resolved notifications
+              ansible.builtin.command:
+                argv: [/usr/bin/python3, /usr/local/libexec/microserver-houston-verify.py]
+              changed_when: true
+              register: microserver_houston_acceptance
+            - name: Report local notification acceptance and recovery directory
+              ansible.builtin.debug:
+                msg: ['{{ microserver_houston_acceptance.stdout }}', 'Public recovery files: {{ microserver_houston_backup.path }}']
+          rescue:
+            - name: Stop only the two newly commissioned notification units
+              ansible.builtin.systemd_service:
+                name: '{{ item }}'
+                state: stopped
+                enabled: false
+              loop: [houston-alerts-webhook.service, houston-dbus.service]
+            - name: Restore the four prior public configuration files
+              ansible.builtin.copy:
+                src: '{{ microserver_houston_backup.path }}/{{ ansible_loop.index0 }}'
+                dest: '{{ item }}'
+                remote_src: true
+                owner: root
+                group: root
+                mode: '0644'
+              loop: '{{ microserver_houston_public_files }}'
+              loop_control: {extended: true}
+            - name: Remove only the new commissioning marker
+              ansible.builtin.file:
+                path: /etc/microserver/houston-alerts.json
+                state: absent
+            - name: Reload the restored unit and D-Bus policy definitions
+              ansible.builtin.systemd_service:
+                name: dbus.service
+                state: reloaded
+                daemon_reload: true
+            - name: Recreate only Alertmanager with its restored configuration
+              ansible.builtin.command:
+                argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, --force-recreate, alertmanager]
+              changed_when: true
+            - name: Report failed qualification with retained state
+              ansible.builtin.fail:
+                msg: 'Houston qualification failed; prior alert routing restored. Retain {{ microserver_houston_backup.path }} and the owner log. The receiver account, helpers and any local notifications are retained for diagnosis; do not rerun commissioning blindly.'
+    - name: Verify the commissioned notification path on a later owner run
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-houston-verify.py]
+      changed_when: true
+      register: microserver_houston_repeat
+      when: microserver_acceptance_operation != 'integrate'
+    - name: Report repeated notification acceptance
+      ansible.builtin.debug:
+        msg: '{{ microserver_houston_repeat.stdout }}'
+      when: microserver_acceptance_operation != 'integrate'
+    - name: Run the owner-authorized isolated write snapshot rollback and cleanup test
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-write-test.py, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+      register: microserver_zfs_write_acceptance
+      changed_when: true
+      when: microserver_acceptance_operation in ['integrate', 'write']
+    - name: Report isolated storage acceptance
+      ansible.builtin.debug:
+        msg: '{{ microserver_zfs_write_acceptance.stdout }}'
+      when: microserver_acceptance_operation in ['integrate', 'write']
+    - name: Verify retained NAS services HTTPS and pool health after acceptance
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-upgrade.py, verify, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+      changed_when: false
+      no_log: true

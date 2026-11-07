@@ -5,6 +5,17 @@ microserver_nfs_clients: []
 microserver_share_uid: 0
 microserver_share_gid: 0
 microserver_monitoring_enabled: false
+microserver_ui_enabled: false
+microserver_ui_tls_enabled: false
+microserver_cockpit_enabled: false
+microserver_cockpit_admin: ''
+microserver_houston_alerts_enabled: false
+microserver_ui_address: ''
+microserver_ui_domain: ''
+microserver_ui_allowed_networks: []
+microserver_telemetry_enabled: false
+microserver_telemetry_client_address: ''
+microserver_workstation_rules_enabled: false
 microserver_irqbalance_enabled: true
 microserver_dimm_limits_enabled: false
 microserver_unifi_syslog_enabled: false

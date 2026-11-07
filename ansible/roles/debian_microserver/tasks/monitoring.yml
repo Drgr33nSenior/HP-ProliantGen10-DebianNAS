@@ -1,4 +1,52 @@
 ---
+- name: Preserve HTTPS before rendering monitoring external URLs
+  ansible.builtin.import_tasks: ui-tls-preserve.yml
+
+- name: Preserve commissioned Houston notification delivery
+  ansible.builtin.import_tasks: houston-alerts-preserve.yml
+
+- name: Inspect commissioned workstation rules before a full monitoring render
+  ansible.builtin.stat:
+    path: /etc/microserver/monitoring/workstation-alerts.yaml
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_existing_workstation_rules
+
+- name: Preserve commissioned workstation rules during later full applies
+  ansible.builtin.assert:
+    that:
+      - not microserver_existing_workstation_rules.stat.exists or microserver_workstation_rules_enabled | bool
+      - not microserver_workstation_rules_enabled | bool or (microserver_telemetry_enabled | bool and microserver_existing_workstation_rules.stat.exists and microserver_existing_workstation_rules.stat.isreg | default(false) and not microserver_existing_workstation_rules.stat.islnk | default(false) and microserver_existing_workstation_rules.stat.uid == 0)
+    fail_msg: Commission owner-workstation.yml first and retain its workstation rules and receiver variables.
+
+- name: Inspect prior trace component installation before a full monitoring render
+  ansible.builtin.stat:
+    path: /etc/microserver/monitoring/tempo.yaml
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_existing_tempo
+
+- name: Preserve an installed trace component and require its scoped commissioning
+  ansible.builtin.assert:
+    that:
+      - not microserver_existing_tempo.stat.exists or microserver_telemetry_enabled | bool
+      - not microserver_existing_tempo.stat.exists or microserver_ui_enabled | bool
+      - not microserver_telemetry_enabled | bool or (microserver_existing_tempo.stat.exists and microserver_existing_tempo.stat.isreg | default(false) and not microserver_existing_tempo.stat.islnk | default(false) and microserver_existing_tempo.stat.uid == 0)
+    fail_msg: Commission the receiver with owner-telemetry.yml first and retain its telemetry variables for later full applies.
+
+- name: Validate the retained exact workstation source before a full render
+  ansible.builtin.assert:
+    that:
+      - microserver_ui_enabled | bool
+      - microserver_telemetry_client_address is string
+      - microserver_telemetry_client_address is match(microserver_nfs_private_ipv4_pattern)
+      - microserver_telemetry_client_address.split('.') | map('int') | max <= 255
+      - microserver_telemetry_client_address.split('.') | map('int') | join('.') == microserver_telemetry_client_address
+      - microserver_telemetry_client_address != microserver_ui_address
+  when: microserver_telemetry_enabled | bool
+
 - name: Require exact private IPv4 syslog endpoints before opening a listener
   ansible.builtin.assert:
     that:
@@ -104,6 +152,7 @@
     - {src: compose.yaml.j2, dest: compose.yaml}
     - {src: prometheus.yaml.j2, dest: prometheus.yaml}
     - {src: vector.yaml.j2, dest: vector.yaml}
+    - {src: alertmanager.yaml.j2, dest: alertmanager.yaml}
   notify: Reload MicroServer monitoring
 
 - name: Install the NAS alert rules and local Alertmanager route
@@ -113,8 +162,27 @@
     owner: root
     group: root
     mode: '0644'
-  loop: [alerts.yaml, alertmanager.yaml, loki.yaml]
+  loop: [loki.yaml]
   notify: Reload MicroServer monitoring
+
+- name: Install NAS and ZFS rules separately from container lifecycle configuration
+  ansible.builtin.copy:
+    src: alerts.yaml
+    dest: /etc/microserver/monitoring/alerts.yaml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer Prometheus rules
+
+- name: Retain the commissioned workstation rules during a full apply
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/config/workstation-alerts.yaml'
+    dest: /etc/microserver/monitoring/workstation-alerts.yaml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer monitoring
+  when: microserver_workstation_rules_enabled | bool
 
 - name: Reuse the canonical Prometheus datasource with a local address
   ansible.builtin.copy:
@@ -317,6 +385,9 @@
     mode: '0644'
   register: microserver_monitoring_unit
   notify: Reload MicroServer monitoring
+
+- name: Install ZFS pool monitoring through the existing textfile exporter
+  ansible.builtin.import_tasks: zfs-monitoring.yml
 
 - name: Inspect only Grafana credential metadata before activation
   ansible.builtin.stat:

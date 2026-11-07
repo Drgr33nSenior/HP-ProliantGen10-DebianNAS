@@ -1,0 +1,154 @@
+---
+- name: Require the existing receiver and intranet monitoring profile
+  tags: [workstation_verify]
+  ansible.builtin.assert:
+    that:
+      - microserver_monitoring_enabled | bool
+      - microserver_ui_enabled | bool
+      - microserver_telemetry_enabled | bool
+      - microserver_workstation_rules_enabled | bool
+      - microserver_ui_address in ansible_facts.all_ipv4_addresses
+      - microserver_prometheus_image is string
+      - microserver_prometheus_image is match('^docker[.]io/prom/prometheus:v[0-9.]+@sha256:[a-f0-9]{64}$')
+
+- name: Require the commissioned monitoring and proxy services
+  tags: [workstation_verify]
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, is-active, microserver-monitoring.service, microserver-ui.service]
+  changed_when: false
+
+- name: Inspect workstation monitoring configuration paths
+  tags: [workstation_verify]
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - {path: /etc/microserver, kind: directory, required: true}
+    - {path: /etc/microserver/monitoring, kind: directory, required: true}
+    - {path: /etc/microserver/monitoring/compose.yaml, kind: file, required: true}
+    - {path: /etc/microserver/monitoring/prometheus.yaml, kind: file, required: true}
+    - {path: /etc/microserver/monitoring/tempo.yaml, kind: file, required: true}
+    - {path: /etc/microserver/monitoring/workstation-alerts.yaml, kind: file, required: false}
+    - {path: /etc/microserver/monitoring/dashboard-folders, kind: directory, required: true}
+    - {path: /etc/microserver/monitoring/dashboard-folders/Infrastructure, kind: directory, required: true}
+    - {path: /usr/local/libexec, kind: directory, required: true}
+    - {path: /usr/local/libexec/microserver-workstation-guard.py, kind: file, required: false}
+    - {path: /usr/local/libexec/microserver-workstation-verify.py, kind: file, required: false}
+  register: microserver_workstation_paths
+
+- name: Reject missing prerequisites and untrusted workstation monitoring paths
+  tags: [workstation_verify]
+  ansible.builtin.assert:
+    that:
+      - not item.item.required or item.stat.exists
+      - not item.stat.exists or (not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+      - not item.stat.exists or ((item.stat.isdir | default(false)) if item.item.kind == 'directory' else (item.stat.isreg | default(false)))
+  loop: '{{ microserver_workstation_paths.results }}'
+
+- name: Inspect the eight existing canonical workstation dashboards
+  tags: [workstation_verify]
+  ansible.builtin.stat:
+    path: '/etc/microserver/monitoring/dashboard-folders/Infrastructure/{{ item }}.json'
+    follow: false
+    checksum_algorithm: sha256
+    get_mime: false
+  loop: [workstation, gpus, host, workloads, power, monitoring, kubernetes, pods]
+  register: microserver_workstation_dashboards
+
+- name: Preserve existing dashboard files and refuse source drift
+  tags: [workstation_verify]
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists and item.stat.isreg | default(false) and not item.stat.islnk | default(false)
+      - item.stat.uid == 0 and item.stat.mode == '0644'
+      - item.stat.checksum == (lookup('ansible.builtin.file', playbook_dir + '/../observability/dashboards/' + item.item + '.json', rstrip=false) | hash('sha256'))
+    fail_msg: Review the installed dashboard and canonical source before changing this component.
+  loop: '{{ microserver_workstation_dashboards.results }}'
+
+- name: Install the workstation component validators
+  tags: [workstation_verify]
+  ansible.builtin.copy:
+    src: '{{ item }}'
+    dest: '/usr/local/libexec/{{ item }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [microserver-workstation-guard.py, microserver-workstation-verify.py]
+
+- name: Validate and install job-scoped workstation alert rules
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/config/workstation-alerts.yaml'
+    dest: /etc/microserver/monitoring/workstation-alerts.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: '/usr/bin/timeout 60 /usr/bin/docker run --rm --pull never --network none --read-only --user 0:0 --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 --pids-limit 64 --volume %s:/rules.yaml:ro --entrypoint /bin/promtool {{ microserver_prometheus_image }} check rules /rules.yaml'
+
+- name: Add only the workstation rule file to Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yaml.j2
+    dest: /etc/microserver/monitoring/prometheus.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: '/usr/bin/python3 /usr/local/libexec/microserver-workstation-guard.py prometheus %s {{ microserver_prometheus_image }}'
+  register: microserver_workstation_prometheus_config
+
+- name: Add only the read-only workstation rule mount
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: /etc/microserver/monitoring/compose.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/bin/python3 /usr/local/libexec/microserver-workstation-guard.py compose %s
+  register: microserver_workstation_compose
+
+- name: Report retained configuration backup filenames before restarting Prometheus
+  ansible.builtin.debug:
+    msg:
+      - 'Prometheus configuration backup: {{ microserver_workstation_prometheus_config.backup_file | default("unchanged") }}'
+      - 'Compose configuration backup: {{ microserver_workstation_compose.backup_file | default("unchanged") }}'
+
+- name: Recreate only Prometheus with the validated rule file mount
+  ansible.builtin.command:
+    argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, --force-recreate, prometheus]
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Wait for Prometheus after replaying its retained WAL
+  tags: [workstation_verify]
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9090/-/ready
+    status_code: 200
+    return_content: false
+    timeout: 5
+  register: microserver_workstation_prometheus_ready
+  until: microserver_workstation_prometheus_ready.status | default(0) == 200
+  retries: 30
+  delay: 2
+  when: not ansible_check_mode
+
+- name: Verify evaluated rules and selected Grafana dashboard and datasource metadata
+  tags: [workstation_verify]
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /usr/local/libexec/microserver-workstation-verify.py]
+  changed_when: false
+  register: microserver_workstation_verification
+  until: microserver_workstation_verification.rc == 0
+  retries: 20
+  delay: 3
+  when: not ansible_check_mode
+
+- name: Report component acceptance and recovery filenames
+  tags: [workstation_verify]
+  ansible.builtin.debug:
+    msg:
+      - '{{ microserver_workstation_verification.stdout | default("Verification not run in check mode") }}'
+      - 'Prometheus configuration backup: {{ microserver_workstation_prometheus_config.backup_file | default("unchanged") }}'
+      - 'Compose configuration backup: {{ microserver_workstation_compose.backup_file | default("unchanged") }}'

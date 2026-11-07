@@ -1,0 +1,185 @@
+# Workstation telemetry receiver
+
+The optional receiver sends workstation metrics and logs to the NAS's existing
+Prometheus and Loki services. It adds a pinned Tempo service for traces and a
+Tempo datasource in Grafana. Enable the receiver on a commissioned NAS before
+changing workstation collectors.
+
+The NAS address and workstation address must be distinct private IPv4 addresses.
+The workstation must have a persistent route to the NAS that selects the
+configured workstation source address. Keep the existing management and K3s
+addresses during this change.
+
+## Enable the NAS component
+
+Retain the existing monitoring and intranet UI variables in the private
+configuration. Add these fields, using the reviewed addresses:
+
+```yaml
+microserver_telemetry_enabled: true
+microserver_telemetry_client_address: '192.168.50.11'
+```
+
+The owner runs this component entry point:
+
+```bash
+ansible-playbook -i /path/to/private/inventory.ini --limit nas \
+  -e @/path/to/private/microserver.yml \
+  -e '{"microserver_owner_install": true}' --ask-become-pass \
+  ansible/owner-telemetry.yml
+```
+
+The apply requires the commissioned monitoring and proxy services. It refuses
+changes to existing Compose services or existing UI routes. It fetches only the
+pinned Tempo image when absent, validates the Tempo configuration, starts Tempo,
+and recreates Grafana to load its datasource. Prometheus, Loki, Vector and
+UnPoller continue running. Storage, NFS and workstation configuration tasks are
+outside this component.
+
+Keep the telemetry variables and `microserver_ui_enabled: true` in subsequent
+full or UI applies. The installed-component checks reject missing flags. An
+older frozen UI launcher does not contain this component and must not be reused
+after receiver installation.
+
+## Access and capacity
+
+Nginx listens on the selected NAS address at TCP 8080. It permits only the exact
+workstation source address. Forwarding headers do not change this check. All
+backends retain their loopback listeners. This profile uses HTTP on the trusted
+intranet, like the existing UI profile. Do not add WAN forwarding or broaden the
+receiver allowlist to untrusted networks.
+
+| Receiver path | Method | Backend |
+| --- | --- | --- |
+| `/ready` | GET | Tempo readiness |
+| `/api/v1/write` | POST | Prometheus remote write |
+| `/loki/api/v1/push` | POST | Loki log push |
+| `/otlp/v1/logs` | POST | Loki OTLP logs |
+| `/v1/traces` | POST | Tempo OTLP HTTP traces |
+| `/metrics/prometheus` | GET | Prometheus self metrics |
+| `/metrics/loki` | GET | Loki self metrics |
+| `/metrics/tempo` | GET | Tempo self metrics |
+| `/metrics/grafana` | GET | Grafana self metrics |
+
+Other paths return HTTP 404. Disallowed methods on these routes return HTTP 403.
+The four metrics routes let workstation Alloy retain its existing dashboard job
+labels after the backend move. Request bodies are limited to 4 MiB.
+
+Tempo uses at most 768 MiB RAM and 0.25 CPU. Its state remains on the NAS OS SSD
+under `/var/lib/microserver/tempo`, with 72-hour trace retention, a 1 MiB trace
+limit and a 1 MiB/s ingestion limit. Retention is not a disk quota. Check free
+space and measured use before increasing ingestion or retention. The local
+fixture verified trace readback; this Tempo version also logged idle scheduler
+messages about missing jobs. Check live errors and trace readback during
+qualification instead of treating readiness alone as proof of trace storage.
+
+## Qualify and cut over
+
+1. Verify readiness and ingestion from the workstation's configured source
+   address. Use synthetic log and trace records without credentials or user
+   content. Read the synthetic records back from the NAS.
+2. Verify that another LAN client receives HTTP 403 on `/ready`. Confirm that
+   the three existing UI names still work.
+3. Back up the workstation collector configuration and record backend replica
+   counts. Preserve its current privacy filters, labels and collector state.
+4. Change collector destinations and the specific egress policy for NAS TCP
+   8080. Verify fresh workstation samples, filtered logs and traces on the NAS.
+5. After the new path passes, stop the redundant workstation Grafana,
+   Prometheus, Loki and Tempo deployments. Retain their persistent volumes and
+   rollback configuration. Keep Alloy, node exporter, kube-state-metrics and
+   the host collection timers.
+
+Receiver installation alone does not migrate historical data, dashboards or
+alerts. Qualify these separately before retiring their workstation copies.
+Resolve collector startup at boot before declaring the workstation ready for
+a reboot; an active but disabled K3s service will not start its collectors.
+
+## Load workstation alerts and verify dashboards
+
+After receiver commissioning, retain its private variables and set:
+
+```yaml
+microserver_workstation_rules_enabled: true
+```
+
+The owner runs the NAS presentation component:
+
+```bash
+ansible-playbook -i /path/to/private/inventory.ini --limit nas \
+  -e @/path/to/private/microserver.yml \
+  -e '{"microserver_owner_install": true}' --ask-become-pass \
+  ansible/owner-workstation.yml
+```
+
+The component adds 16 workstation recording and alert rules. Host queries use
+`job="node"`; NAS host metrics use `job="microserver-node"`. This separation
+lets a missing workstation trigger its availability alert even while the NAS
+continues reporting healthy memory metrics. Rule evaluation failures are
+observed through the NAS's own Prometheus scrape.
+
+A configuration guard permits only the new rule file reference and one
+read-only Prometheus bind mount. Existing services and other Prometheus settings
+must match the reviewed source. The component recreates only NAS Prometheus,
+retaining its database. Collectors can buffer samples during the brief restart.
+
+The eight existing workstation dashboards retain their UIDs. Their installed
+files must match the canonical sources; drift causes refusal. Verification uses
+a read-only Grafana SQLite connection to select active dashboard UID/title
+and datasource UID/type/URL metadata for the expected objects. Grafana 13 uses
+its unified `resource` store for dashboards; its legacy `dashboard` table can
+be empty. A temporary view extracts only the selected public fields inside
+SQLite. The view excludes deleted or trashed dashboards and other organizations.
+A SQLite authorizer rejects direct resource payload reads, credential columns
+and writes. Grafana login remains required for its UI and authenticated API.
+
+The component verifies all workstation rules have evaluated successfully.
+Firing availability alerts are expected while the workstation is offline.
+Existing Alertmanager routing receives the new alerts. Retain this flag and
+the receiver flags for subsequent full or UI applies.
+
+After this component passes, confirm fresh workstation data again before
+retiring the old servers. This procedure leaves their services and volumes
+in place. Workstation reachability and collector boot startup remain separate
+acceptance checks.
+
+Retire the redundant servers in a separate owner operation by setting the
+existing Grafana, Prometheus, Loki and Tempo Deployment replica counts to zero.
+Retain all five PVCs, Services, configuration and the confirmed collector
+transaction. Keep Alloy, node exporter, kube-state-metrics and host timers
+running. Verify new metrics, filtered logs and traces on the NAS after shutdown
+before confirming retirement. Preserve the original replica counts for recovery.
+
+Zero desired counts persist in K3s. Earlier local `full` or `metrics` renders
+would restore local servers and collector destinations; review future applies
+against the accepted NAS topology. Retirement retains historical workstation
+data on its original volumes and does not migrate that history or reclaim disk
+space. Collector startup at boot requires separate verification.
+
+If this workstation-rules component fails, retain its log and printed
+configuration backup filenames. Configuration drift needs review before retry.
+If Prometheus fails to start, the owner can restore the Compose and Prometheus
+configuration backups, validate them, and recreate only Prometheus. Keep its
+database, the rule file and the existing dashboard files. A metadata-only
+verification failure requires diagnosis of that check; it does not imply that
+the receiver or storage installation failed.
+
+After correcting a verification failure, the owner can add
+`--tags workstation_verify` to the same workstation playbook command. This mode
+retains the target, path and dashboard file checks, updates only the two validator
+scripts, and verifies the database metadata and evaluated rules. It does not
+install rules, change Compose or Prometheus configuration, or restart services.
+
+## Recover from a failed receiver apply
+
+Keep the apply log and inspect the failed task before retrying. Drift refusal
+requires review of the existing configuration. Do not replace that configuration
+to force validation to pass. A failed proxy reload can leave the previous
+configuration running; compare readiness with the task result.
+
+Ansible creates timestamped backups beside existing configuration files before
+replacing them. For owner rollback, stop only Tempo using the installed Compose
+file, restore the recorded Compose and Nginx backups, and move the new Tempo
+datasource file into a protected backup directory outside Grafana provisioning.
+Validate restored Compose and Nginx configuration before recreating only Grafana
+and reloading `microserver-ui.service`. Keep the Tempo state directory. Do not
+run Compose `down`, delete volumes or rerun OS/storage installation.

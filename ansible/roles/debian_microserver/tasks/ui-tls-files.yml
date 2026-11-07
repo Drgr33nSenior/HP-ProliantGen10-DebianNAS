@@ -1,0 +1,81 @@
+---
+- name: Require HTTPS and the existing intranet proxy together
+  ansible.builtin.assert:
+    that:
+      - microserver_ui_enabled | bool
+      - microserver_monitoring_enabled | bool
+
+- name: Inspect managed TLS paths without reading credentials
+  ansible.builtin.stat:
+    path: '{{ item.path }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - {path: /etc/letsencrypt, directory: true}
+    - {path: /etc/letsencrypt/renewal-hooks, directory: true}
+    - {path: /etc/letsencrypt/renewal-hooks/deploy, directory: true}
+    - {path: /etc/systemd/system/microserver-ui.service.d, directory: true}
+    - {path: /etc/systemd/system/microserver-ui.service.d/tls.conf, directory: false}
+    - {path: /etc/microserver/ui/tls.json, directory: false}
+    - {path: /usr/local/libexec/microserver-ui-tls.py, directory: false}
+    - {path: /etc/letsencrypt/renewal-hooks/deploy/50-microserver-ui, directory: false}
+  register: microserver_tls_paths
+
+- name: Require protected managed TLS paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+      - not item.stat.exists or ((item.stat.isdir | default(false)) if item.item.directory else (item.stat.isreg | default(false)))
+  loop: '{{ microserver_tls_paths.results }}'
+
+- name: Require the owner-prepared Certbot hook directories
+  ansible.builtin.assert:
+    that: [item.stat.exists]
+  loop: '{{ microserver_tls_paths.results[:3] }}'
+
+- name: Install the public TLS verifier
+  ansible.builtin.copy:
+    src: microserver-ui-tls.py
+    dest: /usr/local/libexec/microserver-ui-tls.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Record only the public TLS address and DNS suffix
+  ansible.builtin.copy:
+    content: "{{ {'address': microserver_ui_address, 'domain': microserver_ui_domain, 'cockpit': microserver_cockpit_enabled | bool} | to_json }}\n"
+    dest: /etc/microserver/ui/tls.json
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Verify the owner-issued certificate without returning protected material
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /usr/local/libexec/microserver-ui-tls.py, cert]
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Create the managed proxy drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/microserver-ui.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deliver the certificate to the rootless proxy through systemd credentials
+  ansible.builtin.copy:
+    src: microserver-ui-tls.conf
+    dest: /etc/systemd/system/microserver-ui.service.d/tls.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install the lineage-specific certificate deployment hook
+  ansible.builtin.copy:
+    src: microserver-ui-tls-renew
+    dest: /etc/letsencrypt/renewal-hooks/deploy/50-microserver-ui
+    owner: root
+    group: root
+    mode: '0755'

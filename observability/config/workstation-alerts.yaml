@@ -1,0 +1,86 @@
+# Adapted from the reviewed workstation rules; job selectors separate NAS data.
+groups:
+  - name: workstation
+    interval: 30s
+    rules:
+      - record: workstation:memory_available_ratio
+        expr: node_memory_MemAvailable_bytes{job="node"} / node_memory_MemTotal_bytes{job="node"}
+      - record: workstation:memory_pressure_ratio:rate5m
+        expr: rate(node_pressure_memory_waiting_seconds_total{job="node"}[5m])
+      - alert: WorkstationMemoryHeadroomLow
+        expr: workstation:memory_available_ratio < 0.10
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Host available RAM below 10%; no swap baseline'
+          description: 'Inspect AI/build overlap and pod memory; do not remove the host reserve.'
+      - alert: WorkstationMemoryPressure
+        expr: workstation:memory_pressure_ratio:rate5m > 0.1
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Sustained host memory stalls; reduce concurrency before tuning'}
+      - alert: WorkstationStorageSpaceLow
+        expr: '(node_filesystem_avail_bytes{job="node",fstype="xfs"} / node_filesystem_size_bytes{job="node",fstype="xfs"}) < 0.15'
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'XFS free space below 15%'
+          description: 'Review model/build/log retention. PVC requested sizes are not filesystem quotas.'
+      - alert: WorkstationExporterDown
+        expr: 'up{job=~"node|kube-state-metrics|alloy|workstation-host-alloy|prometheus|loki|tempo|grafana"} == 0'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'An expected workstation telemetry target is unavailable'}
+      - alert: WorkstationHostTelemetryMissing
+        expr: 'absent(node_memory_MemTotal_bytes{job="node"})'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'No host memory observations; missing data is not healthy data'}
+      - alert: WorkstationPodOOM
+        expr: 'kube_pod_container_status_last_terminated_reason{job="kube-state-metrics",reason="OOMKilled"} == 1'
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: 'A container last terminated with OOMKilled; inspect its actual memory budget'}
+      - alert: WorkstationPodRestarting
+        expr: 'increase(kube_pod_container_status_restarts_total{job="kube-state-metrics"}[15m]) > 2'
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Repeated container restarts; inspect rollout and readiness evidence'}
+      - alert: WorkstationTelemetryExportFailed
+        expr: 'sum(increase(otelcol_exporter_send_failed_spans_total{job=~"alloy|workstation-host-alloy"}[5m])) > 0 or sum(increase(otelcol_exporter_send_failed_log_records_total{job=~"alloy|workstation-host-alloy"}[5m])) > 0 or sum(increase(otelcol_exporter_send_failed_metric_points_total{job=~"alloy|workstation-host-alloy"}[5m])) > 0 or sum(increase(prometheus_remote_storage_samples_failed_total{job=~"alloy|workstation-host-alloy"}[5m])) > 0'
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Telemetry export failures; inspect backend readiness, limits and bounded queues'}
+      - alert: WorkstationTelemetryRefused
+        expr: 'sum(increase({__name__=~"otelcol_processor(_memory_limiter)?_refused_(spans|log_records|metric_points)_total",job=~"alloy|workstation-host-alloy"}[5m])) > 0'
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Collector memory limiter refused telemetry; results may be incomplete'}
+      - alert: WorkstationHostAlloyHeartbeatMissing
+        expr: 'absent_over_time(up{job="workstation-host-alloy"}[5m])'
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Host Alloy heartbeat is absent or stale; host telemetry may be incomplete'}
+      - alert: WorkstationPrometheusRuleFailure
+        # NAS self-observation remains available when workstation Alloy is off.
+        expr: 'increase(prometheus_rule_evaluation_failures_total{job="microserver-prometheus"}[5m]) > 0'
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Recording or alert rule evaluation failed'}
+      - alert: WorkstationHardwareSampleStale
+        expr: 'time() - workstation_hardware_sample_timestamp_seconds{job="node"} > 120 or absent(workstation_hardware_sample_timestamp_seconds{job="node"})'
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Host hardware sampler is missing or stale; check its timer and textfile permissions'}
+      - alert: WorkstationGPUInventoryChanged
+        expr: 'workstation_gpu_count{job="node"} != 2'
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Discovered GPU count differs from this dual-R9700 workstation plan'
+          description: 'Reconcile physical inventory and driver state; do not infer a failed card solely from this metric. Review this rule if the intended inventory changes.'
+      - alert: WorkstationGPUVRAMNearlyFull
+        expr: 'workstation_gpu_vram_used_bytes{job="node"} / workstation_gpu_vram_total_bytes{job="node"} > 0.98'
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'One physical GPU has less than 2% VRAM headroom; inspect model/KV/workspace allocations'}

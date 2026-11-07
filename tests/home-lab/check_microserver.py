@@ -1,6 +1,7 @@
 """Exercise the actual installer guards and templates without contacting a host."""
 import copy
 import configparser
+import hashlib
 from decimal import Decimal
 import importlib.util
 import io
@@ -29,6 +30,7 @@ ENV.tests['match'] = lambda value, pattern: re.match(pattern, str(value)) is not
 ENV.filters['type_debug'] = lambda value: type(value).__name__
 ENV.filters['bool'] = lambda value: value is True or str(value).lower() in ('true', 'yes', '1')
 ENV.filters['from_json'] = json.loads
+ENV.filters['hash'] = lambda value, algorithm='sha1': hashlib.new(algorithm, value.encode()).hexdigest()
 ENV.filters['to_json'] = json.dumps
 ENV.filters['urlsplit'] = lambda value, key: getattr(urllib.parse.urlsplit(value), key)
 ENV.filters['from_yaml_all'] = lambda value: list(yaml.safe_load_all(value))
@@ -50,11 +52,17 @@ ENV.globals['lookup'] = lookup
 
 
 def assertions(task, context):
+    if not all(isinstance(expr, str) for expr in task['ansible.builtin.assert']['that']):
+        raise TypeError('Ansible assertion fixtures require expression strings')
     return all(ENV.compile_expression(expr)(**context)
                for expr in task['ansible.builtin.assert']['that'])
 
 
 class MicroServerTests(unittest.TestCase):
+    def test_assertion_fixture_refuses_yaml_mappings_as_expressions(self):
+        with self.assertRaises(TypeError):
+            assertions({'ansible.builtin.assert': {'that': [{'unexpected': 'mapping'}]}}, {})
+
     def setUp(self):
         self.storage = read_yaml(ROLE / 'tasks/storage.yml')
         self.monitoring = read_yaml(ROLE / 'tasks/monitoring.yml')
@@ -63,6 +71,7 @@ class MicroServerTests(unittest.TestCase):
             playbook_dir=str(ROOT / 'ansible'),
             microserver_pool_guid='1234567890123456789',
             microserver_nfs_clients=['192.168.50.20'],
+            microserver_nfs_resolved_clients=['192.168.50.20'],
             microserver_share_uid=1000, microserver_share_gid=1000,
         )
         for key, value in read_yaml(ROLE / 'vars/main.yml').items():
@@ -204,7 +213,13 @@ class MicroServerTests(unittest.TestCase):
             self.assertNotIn(task['name'], selected.stdout)
         for name in ['packages', 'host', 'sensors', 'tuning', 'monitoring']:
             for task in read_yaml(ROLE / f'tasks/{name}.yml'):
-                self.assertIn(task['name'], selected.stdout)
+                # Ansible expands static imports in --list-tasks. Verify every
+                # imported leaf rather than expecting the import wrapper name.
+                if 'ansible.builtin.import_tasks' in task:
+                    for child in read_yaml(ROLE / 'tasks' / task['ansible.builtin.import_tasks']):
+                        self.assertIn(child['name'], selected.stdout)
+                else:
+                    self.assertIn(task['name'], selected.stdout)
         configured = subprocess.run(command + ['configure'],
                                     cwd=ROOT, env=environment,
                                     capture_output=True, text=True, timeout=30)
@@ -276,12 +291,107 @@ class MicroServerTests(unittest.TestCase):
                        dict(microserver_share_gid=0), dict(microserver_nfs_clients=[]),
                        dict(microserver_nfs_clients='192.168.50.20')]:
             self.assertFalse(assertions(self.storage[0], dict(self.context, **change)))
-        for client in ['10.0.0.1', '172.16.0.2', '172.31.255.254', '192.168.50.20']:
-            self.assertTrue(assertions(self.storage[1], dict(item=client)))
+        for client in ['10.0.0.1', '172.16.0.2', '172.31.255.254', '192.168.50.20',
+                       'workstation.home.arpa', 'Threadripper-AI.lan.example.com']:
+            self.assertTrue(assertions(self.storage[1], dict(self.context, item=client)))
         for client in ['*', '192.168.50.0/24', '203.0.113.10', '172.32.0.1',
                        '192.168.256.1', '192.168.050.20', '192.168.50.20(no_root_squash)',
                        '192.168.50.20\n10.0.0.2', None, 123]:
-            self.assertFalse(assertions(self.storage[1], dict(item=client)))
+            self.assertFalse(assertions(self.storage[1], dict(self.context, item=client)))
+        for client in ['workstation', '*.home.arpa', 'workstation.home.arpa\n',
+                       'workstation.home.arpa(rw)', 'workstation..home.arpa',
+                       '-workstation.home.arpa', 'workstation-.home.arpa',
+                       'work_station.home.arpa', 'https://workstation.home.arpa',
+                       '2001:db8::1', 'a' * 64 + '.home.arpa',
+                       ('a' * 63 + '.') * 4 + 'arpa']:
+            self.assertFalse(assertions(self.storage[1], dict(self.context, item=client)))
+
+    def test_resolved_nfs_clients_require_private_ipv4_before_pool_changes(self):
+        guard = next(task for task in self.storage if task['name'] == 'Require every resolved NFS client address to be private IPv4')
+        for client in ['10.0.0.1', '172.16.0.2', '172.31.255.254', '192.168.50.20']:
+            self.assertTrue(assertions(guard, dict(self.context, item=client)))
+        for client in ['203.0.113.10', '172.32.0.1', '127.0.0.1', '169.254.1.2',
+                       '192.168.050.20', '192.168.50.20\n', '::1', '2001:db8::1', '']:
+            self.assertFalse(assertions(guard, dict(self.context, item=client)))
+        self.assertLess(self.storage.index(guard), next(i for i, task in enumerate(self.storage)
+                                                       if 'ansible.builtin.systemd_service' in task))
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'Ansible is required for DNS fixture execution')
+    def test_nfs_dns_resolution_and_exports_in_actual_ansible_check_mode(self):
+        # Only the canonical validation prefix runs, on localhost with a fake
+        # resolver. No pool, disk, service, real DNS or inventory is accessed.
+        end = next(i for i, task in enumerate(self.storage)
+                   if task.get('ansible.builtin.command', {}).get('argv', [])[:2] == ['zpool', 'get'])
+        records = {
+            '192.168.50.20': ['192.168.50.20'],
+            'workstation.home.arpa': ['192.168.50.20'],
+            'multi.home.arpa': ['10.20.0.5', '192.168.50.20', '10.20.0.5'],
+            'public.home.arpa': ['203.0.113.10'],
+            'mixed.home.arpa': ['192.168.50.20', '203.0.113.10'],
+            'empty.home.arpa': [],
+            'ipv6.home.arpa': ['2001:db8::1'],
+        }
+        cases = [
+            (['192.168.50.20'], ['192.168.50.20']),
+            (['workstation.home.arpa'], ['192.168.50.20']),
+            (['multi.home.arpa', '192.168.50.20'], ['10.20.0.5', '192.168.50.20']),
+            (['missing.home.arpa'], None), (['empty.home.arpa'], None),
+            (['public.home.arpa'], None), (['mixed.home.arpa'], None),
+            (['ipv6.home.arpa'], None), (['*.home.arpa'], None),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            resolver = work / 'getent'
+            resolver.write_text(
+                '#!' + sys.executable + '\nimport sys\nrecords = ' + repr(records) + '\n'
+                'if len(sys.argv) != 3 or sys.argv[1] != "ahostsv4": sys.exit(3)\n'
+                'name = sys.argv[2]\n'
+                'with open(' + repr(str(work / 'queries')) + ', "a") as log: log.write(name + "\\n")\n'
+                'if name not in records: sys.exit(2)\n'
+                'for address in records[name]:\n'
+                '    for kind in ["STREAM", "DGRAM", "RAW"]:\n'
+                '        print(address, kind, name)\n')
+            resolver.chmod(0o700)
+            plays = []
+            for index, (clients, expected) in enumerate(cases):
+                variables = {key: value for key, value in self.context.items()
+                             if key in ['microserver_pool_name', 'microserver_pool_guid',
+                                        'microserver_share_uid', 'microserver_share_gid',
+                                        'microserver_nfs_private_ipv4_pattern', 'microserver_nfs_fqdn_pattern']}
+                addresses = expected or []
+                export = '# Managed for one owner-selected dataset. root_squash preserves server ownership.\n'
+                export += '/srv/microserver/shared' + ''.join(
+                    ' ' + address + '(rw,sync,root_squash,no_subtree_check,mountpoint)' for address in addresses)
+                variables.update(microserver_environment='tst', microserver_nfs_clients=clients,
+                                 ansible_python_interpreter=sys.executable,
+                                 expected_success=expected is not None, expected_addresses=addresses,
+                                 expected_export=export, exports_template=str(ROLE / 'templates/exports.j2'))
+                plays.append(dict(
+                    name='NFS resolver fixture ' + str(index), hosts='localhost', connection='local',
+                    gather_facts=False, vars=variables,
+                    environment={'PATH': str(work) + os.pathsep + os.environ.get('PATH', '')},
+                    tasks=[
+                        {'ansible.builtin.set_fact': {'dns_fixture_accepted': False}},
+                        {'block': copy.deepcopy(self.storage[:end]) + [
+                            {'ansible.builtin.set_fact': {'dns_fixture_accepted': True}}],
+                         'rescue': [{'ansible.builtin.set_fact': {'dns_fixture_accepted': False}}]},
+                        {'ansible.builtin.assert': {'that': ['dns_fixture_accepted == expected_success']}},
+                        {'ansible.builtin.assert': {'that': [
+                            'microserver_nfs_resolved_clients == expected_addresses',
+                            "(lookup('ansible.builtin.template', exports_template) | trim) == expected_export"]},
+                         'when': 'expected_success'},
+                    ]))
+            playbook = work / 'dns-fixtures.yml'
+            playbook.write_text(yaml.safe_dump(plays, sort_keys=False))
+            result = subprocess.run(
+                ['ansible-playbook', '-i', 'localhost,', '--check', str(playbook)],
+                cwd=ROOT, capture_output=True, text=True, timeout=120,
+                env=dict(os.environ, ANSIBLE_CONFIG=str(ROOT / 'ansible.cfg'), ANSIBLE_NOCOLOR='1'))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            queries = (work / 'queries').read_text().splitlines()
+            self.assertIn('workstation.home.arpa', queries)
+            self.assertIn('missing.home.arpa', queries)
+            self.assertNotIn('*.home.arpa', queries)
 
     def test_guid_and_mounted_dataset_are_required(self):
         guid_task = next(task for task in self.storage if task['name'] == 'Require the exact owner-selected pool')
@@ -306,7 +416,21 @@ class MicroServerTests(unittest.TestCase):
                     storage_read = argv[:2] in [['zpool', 'get'], ['zpool', 'list'], ['zfs', 'list'], ['zfs', 'get']]
                     hardware_read = argv in [['/usr/sbin/dmidecode', '--type', '17'],
                                              ['/usr/bin/sensors', '-c', '/dev/null', '-j']]
-                    self.assertTrue(storage_read or hardware_read, argv)
+                    dns_read = argv == ['getent', 'ahostsv4', '{{ item }}']
+                    ui_status_read = argv in [['/usr/bin/systemctl', 'is-active', 'nginx.service'],
+                                              ['/usr/bin/systemctl', 'is-active', 'microserver-monitoring.service']]
+                    ui_scope_read = (source.name == 'ui.yml' and task['name'] == 'Validate intranet address and access scope before rendering'
+                                     and argv == ['/usr/bin/python3', '-c', "{{ lookup('ansible.builtin.file', role_path + '/files/microserver-ui-validate.py') }}",
+                                                  "{{ {'address': microserver_ui_address, 'domain': microserver_ui_domain, 'networks': microserver_ui_allowed_networks} | to_json }}"])
+                    # Receiver commissioning reuses the validator for two /32s;
+                    # its other check-mode exceptions read only service/image IDs.
+                    telemetry_read = source.name == 'telemetry.yml' and argv in [
+                        ['/usr/bin/python3', '-c', "{{ lookup('ansible.builtin.file', role_path + '/files/microserver-ui-validate.py') }}",
+                         "{{ {'address': microserver_ui_address, 'domain': microserver_ui_domain, 'networks': [microserver_ui_address + '/32', microserver_telemetry_client_address + '/32']} | to_json }}"],
+                        ['/usr/bin/systemctl', 'is-active', 'microserver-monitoring.service', 'microserver-ui.service'],
+                        ['/usr/bin/docker', 'image', 'inspect', '--format', "{{ '{{.Id}}' }}", '{{ microserver_tempo_image }}'],
+                    ]
+                    self.assertTrue(storage_read or hardware_read or dns_read or ui_status_read or ui_scope_read or telemetry_read, argv)
 
     def test_path_guards(self):
         task = next(task for task in self.storage if task['name'].startswith('Refuse untrusted'))

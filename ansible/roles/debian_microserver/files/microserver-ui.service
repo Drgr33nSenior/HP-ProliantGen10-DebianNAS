@@ -1,0 +1,39 @@
+[Unit]
+Description=MicroServer intranet monitoring UIs
+Requisite=microserver-monitoring.service
+After=microserver-monitoring.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=www-data
+Group=www-data
+RuntimeDirectory=microserver-ui
+RuntimeDirectoryMode=0750
+ExecStartPre=/usr/sbin/nginx -e stderr -t -c /etc/microserver/ui/nginx.conf -g 'pid /run/microserver-ui/nginx.pid;'
+ExecStart=/usr/sbin/nginx -e stderr -c /etc/microserver/ui/nginx.conf -g 'daemon off; pid /run/microserver-ui/nginx.pid;'
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGQUIT
+TimeoutStopSec=30s
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+UMask=0027
+MemoryMax=128M
+CPUQuota=20%
+TasksMax=64
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

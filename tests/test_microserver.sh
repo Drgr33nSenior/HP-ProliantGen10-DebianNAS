@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline only: no inventory connection, containers, disks or service activation.
+# Offline by default; optional native fixtures use owned local containers only.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 if [[ -z ${MICROSERVER_PYTHON:-} ]]; then
@@ -9,6 +9,16 @@ fi
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_microserver.py" "$work"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_ui.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_telemetry.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_workstation.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_zfs.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_zfs_upgrade.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_tls.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_cockpit.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_houston.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_zfs_write.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_receivers_native.py"
 if [[ $(uname -s) == Linux ]] && command -v systemd-analyze >/dev/null 2>&1; then
   cp "$root/ansible/roles/debian_microserver/files/microserver-docker-metrics.service" "$work/"
   cp "$root/ansible/roles/debian_microserver/files/microserver-docker-metrics.timer" "$work/"
@@ -30,6 +40,11 @@ if command -v promtool >/dev/null 2>&1; then
   (cd "$work" && promtool test rules alerts_test.yaml)
   promtool test rules "$work/dashboard_test.yaml"
   promtool test rules "$work/network_test.yaml"
+  cp "$root/observability/config/workstation-alerts.yaml" "$work/workstation-alerts.yaml"
+  cp "$root/tests/fixtures/microserver/workstation_alerts_test.yaml" "$work/workstation_alerts_test.yaml"
+  (cd "$work" && promtool test rules workstation_alerts_test.yaml)
+  cp "$root/tests/fixtures/microserver/zfs_alerts_test.yaml" "$work/zfs_alerts_test.yaml"
+  (cd "$work" && promtool test rules zfs_alerts_test.yaml)
   promtool check metrics <"$work/docker_metrics.prom"
 else
   echo 'SKIP: MicroServer Prometheus configuration and alert checks require promtool'

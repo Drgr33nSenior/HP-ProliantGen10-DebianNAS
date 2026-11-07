@@ -1,0 +1,8 @@
+{% if microserver_houston_alerts_enabled | bool %}
+{% set base = lookup('ansible.builtin.file', role_path + '/files/alertmanager.yaml') | from_yaml %}
+{% set receiver = {'name': 'houston-alerts-webhook', 'webhook_configs': [{'url': 'http://127.0.0.1:5002/webhook', 'send_resolved': true, 'max_alerts': 100}]} %}
+{% set route = {'receiver': 'houston-alerts-webhook', 'routes': [{'matchers': ['alertname="MicroserverHoustonAcceptance"'], 'group_by': ['alertname', 'acceptance_id'], 'group_wait': '0s', 'group_interval': '5s', 'repeat_interval': '1h', 'receiver': 'houston-alerts-webhook'}]} %}
+{{ base | combine({'route': route, 'receivers': base.receivers + [receiver]}, recursive=true) | to_nice_yaml(indent=2, sort_keys=false) }}
+{% else %}
+{{ lookup('ansible.builtin.file', role_path + '/files/alertmanager.yaml') }}
+{% endif %}

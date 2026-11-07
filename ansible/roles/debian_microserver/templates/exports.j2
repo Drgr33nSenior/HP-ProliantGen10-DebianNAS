@@ -1,2 +1,2 @@
 # Managed for one owner-selected dataset. root_squash preserves server ownership.
-/srv/microserver/shared{% for client in microserver_nfs_clients %} {{ client }}(rw,sync,root_squash,no_subtree_check,mountpoint){% endfor %}
+/srv/microserver/shared{% for client in microserver_nfs_resolved_clients %} {{ client }}(rw,sync,root_squash,no_subtree_check,mountpoint){% endfor %}

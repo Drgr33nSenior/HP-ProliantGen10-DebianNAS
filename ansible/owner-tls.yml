@@ -1,0 +1,218 @@
+---
+- name: Owner-run private HTTPS commissioning
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  pre_tasks:
+    - name: Require one commissioned production NAS and the explicit HTTPS profile
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - microserver_monitoring_enabled | bool and microserver_ui_enabled | bool and microserver_ui_tls_enabled | bool
+          - ansible_facts.hostname == 'microserver'
+          - ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+          - microserver_ui_address in ansible_facts.all_ipv4_addresses
+          - microserver_tls_previous_nginx_sha256 is match('^[a-f0-9]{64}$')
+    - name: Validate the public listener and allowlist inputs
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir + '/roles/debian_microserver/files/microserver-ui-validate.py') }}"
+          - "{{ {'address': microserver_ui_address, 'domain': microserver_ui_domain, 'networks': microserver_ui_allowed_networks} | to_json }}"
+      changed_when: false
+    - name: Require the commissioned monitoring and proxy services
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, is-active, microserver-monitoring.service, microserver-ui.service]
+      changed_when: false
+    - name: Read the effective rootless proxy identity and privilege policy
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, show, microserver-ui.service, --property=User, --property=Group, --property=NoNewPrivileges]
+      changed_when: false
+      register: microserver_tls_identity
+    - name: Preserve the rootless proxy identity and privilege policy
+      ansible.builtin.assert:
+        that:
+          - "'User=www-data' in microserver_tls_identity.stdout_lines"
+          - "'Group=www-data' in microserver_tls_identity.stdout_lines"
+          - "'NoNewPrivileges=yes' in microserver_tls_identity.stdout_lines"
+    - name: Inspect HTTPS configuration and parent paths
+      ansible.builtin.stat:
+        path: '{{ item.path }}'
+        follow: false
+        checksum_algorithm: sha256
+        get_mime: false
+      loop:
+        - {path: /etc/microserver, kind: directory, required: true}
+        - {path: /etc/microserver/ui, kind: directory, required: true}
+        - {path: /etc/microserver/monitoring, kind: directory, required: true}
+        - {path: /etc/systemd/system, kind: directory, required: true}
+        - {path: /usr/local/libexec, kind: directory, required: true}
+        - {path: /var/lib/microserver, kind: directory, required: true}
+        - {path: /etc/microserver/ui/nginx.conf, kind: file, required: true}
+        - {path: /etc/microserver/monitoring/compose.yaml, kind: file, required: true}
+        - {path: /usr/local/libexec/microserver-ui-compose.py, kind: file, required: true}
+        - {path: /etc/systemd/system/microserver-ui.service.d, kind: directory, required: false}
+        - {path: /etc/systemd/system/microserver-ui.service.d/tls.conf, kind: file, required: false}
+        - {path: /etc/systemd/system/microserver-ui.service, kind: file, required: true}
+      register: microserver_tls_existing
+    - name: Require protected existing files and directories
+      ansible.builtin.assert:
+        that:
+          - not item.item.required or item.stat.exists
+          - not item.stat.exists or (not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+          - not item.stat.exists or ((item.stat.isdir | default(false)) if item.item.kind == 'directory' else (item.stat.isreg | default(false)))
+      loop: '{{ microserver_tls_existing.results }}'
+    - name: Refuse proxy drift outside the reviewed HTTP or HTTPS render
+      ansible.builtin.assert:
+        that:
+          - microserver_tls_existing.results[6].stat.checksum in [microserver_tls_previous_nginx_sha256, lookup('ansible.builtin.template', 'roles/debian_microserver/templates/ui-nginx.conf.j2') | hash('sha256')]
+          - microserver_tls_existing.results[11].stat.checksum == (lookup('ansible.builtin.file', playbook_dir + '/roles/debian_microserver/files/microserver-ui.service', rstrip=false) | hash('sha256'))
+  tasks:
+    - name: Prepare a protected rollback directory for public configuration only
+      ansible.builtin.tempfile:
+        state: directory
+        path: /var/lib/microserver
+        prefix: ui-tls-backup.
+      register: microserver_tls_backup
+    - name: Preserve the current proxy and monitoring configuration
+      ansible.builtin.copy:
+        remote_src: true
+        src: '{{ item.source }}'
+        dest: '{{ microserver_tls_backup.path }}/{{ item.name }}'
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - {source: /etc/microserver/ui/nginx.conf, name: nginx.conf}
+        - {source: /etc/microserver/monitoring/compose.yaml, name: compose.yaml}
+    - name: Preserve the prior credential drop-in when already installed
+      ansible.builtin.copy:
+        remote_src: true
+        src: /etc/systemd/system/microserver-ui.service.d/tls.conf
+        dest: '{{ microserver_tls_backup.path }}/tls.conf'
+        owner: root
+        group: root
+        mode: '0600'
+      when: microserver_tls_existing.results[10].stat.exists
+    - name: Apply and qualify private HTTPS with configuration rollback on failure
+      block:
+        - name: Install only the TLS credential plumbing and verifier
+          ansible.builtin.import_role:
+            name: debian_microserver
+            tasks_from: ui-tls-files
+        - name: Install the URL-only monitoring guard
+          ansible.builtin.copy:
+            src: roles/debian_microserver/files/microserver-ui-compose.py
+            dest: /usr/local/libexec/microserver-ui-compose.py
+            owner: root
+            group: root
+            mode: '0644'
+        - name: Render and validate HTTPS while preserving workstation ingestion
+          ansible.builtin.template:
+            src: roles/debian_microserver/templates/ui-nginx.conf.j2
+            dest: /etc/microserver/ui/nginx.conf
+            owner: root
+            group: root
+            mode: '0644'
+            validate: /usr/bin/python3 /usr/local/libexec/microserver-ui-tls.py nginx %s
+        - name: Change only external UI URLs and secure Grafana cookies
+          ansible.builtin.template:
+            src: roles/debian_microserver/templates/compose.yaml.j2
+            dest: /etc/microserver/monitoring/compose.yaml
+            owner: root
+            group: root
+            mode: '0644'
+            validate: /usr/bin/python3 /usr/local/libexec/microserver-ui-compose.py %s
+        - name: Restart the rootless proxy with its private credential snapshot
+          ansible.builtin.systemd_service:
+            name: microserver-ui.service
+            daemon_reload: true
+            state: restarted
+        - name: Apply only the three UI external address changes
+          ansible.builtin.command:
+            argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, prometheus, grafana, alertmanager]
+          changed_when: true
+        - name: Verify trusted HTTPS redirects and Grafana authentication from the NAS
+          ansible.builtin.command:
+            argv: [/usr/bin/python3, /usr/local/libexec/microserver-ui-tls.py, probe]
+          changed_when: false
+          register: microserver_tls_ready
+          until: microserver_tls_ready.rc == 0
+          retries: 20
+          delay: 3
+        - name: Verify trusted browser hostnames from the owner controller
+          ansible.builtin.command:
+            argv: [/usr/bin/curl, --noproxy, '*', --fail, --silent, --show-error, --max-time, '8', --output, /dev/null, --write-out, '%{remote_ip} %{http_code}', 'https://{{ item.name }}.{{ microserver_ui_domain }}{{ item.path }}']
+          delegate_to: localhost
+          connection: local
+          become: false
+          changed_when: false
+          register: microserver_tls_controller
+          loop:
+            - {name: grafana, path: /api/health}
+            - {name: prometheus, path: /-/ready}
+            - {name: alertmanager, path: /-/ready}
+        - name: Require the owner controller to reach the exact NAS address over HTTPS
+          ansible.builtin.assert:
+            that: [item.stdout == microserver_ui_address + ' 200']
+          loop: '{{ microserver_tls_controller.results }}'
+        - name: Qualify automatic renewal and its real deployment hook
+          ansible.builtin.command:
+            argv: [/usr/bin/timeout, '300', /usr/bin/certbot, renew, --cert-name, microserver-ui, --dry-run, --run-deploy-hooks]
+          changed_when: true
+          no_log: true
+        - name: Enable the packaged certificate renewal timer
+          ansible.builtin.systemd_service:
+            name: certbot.timer
+            enabled: true
+            state: started
+        - name: Report HTTPS acceptance and retained recovery configuration
+          ansible.builtin.debug:
+            msg:
+              - '{{ microserver_tls_ready.stdout }}'
+              - 'TLS_RENEWAL=DNS validation and deployment hook verified'
+              - 'TLS_ROLLBACK_CONFIGURATION={{ microserver_tls_backup.path }}'
+      rescue:
+        - name: Restore the prior public proxy and monitoring configuration
+          ansible.builtin.copy:
+            remote_src: true
+            src: '{{ microserver_tls_backup.path }}/{{ item.name }}'
+            dest: '{{ item.destination }}'
+            owner: root
+            group: root
+            mode: '0644'
+          loop:
+            - {name: nginx.conf, destination: /etc/microserver/ui/nginx.conf}
+            - {name: compose.yaml, destination: /etc/microserver/monitoring/compose.yaml}
+        - name: Restore the prior credential drop-in when it existed
+          ansible.builtin.copy:
+            remote_src: true
+            src: '{{ microserver_tls_backup.path }}/tls.conf'
+            dest: /etc/systemd/system/microserver-ui.service.d/tls.conf
+            owner: root
+            group: root
+            mode: '0644'
+          when: microserver_tls_existing.results[10].stat.exists
+        - name: Remove only the new credential drop-in after a failed first commissioning
+          ansible.builtin.file:
+            path: /etc/systemd/system/microserver-ui.service.d/tls.conf
+            state: absent
+          when: not microserver_tls_existing.results[10].stat.exists
+        - name: Restore the prior proxy service configuration
+          ansible.builtin.systemd_service:
+            name: microserver-ui.service
+            daemon_reload: true
+            state: restarted
+        - name: Restore only the prior three UI container addresses
+          ansible.builtin.command:
+            argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, prometheus, grafana, alertmanager]
+          changed_when: true
+        - name: Report the failed HTTPS qualification after restoring configuration
+          ansible.builtin.fail:
+            msg: 'TLS qualification failed and prior public configuration was restored. Retain the owner log and {{ microserver_tls_backup.path }}. Certificate and DNS credentials remain protected on the NAS.'

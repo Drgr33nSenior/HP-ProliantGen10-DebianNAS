@@ -1,0 +1,77 @@
+---
+- name: Validate the selected ZFS monitoring pool
+  ansible.builtin.assert:
+    that:
+      - microserver_pool_name is string
+      - microserver_pool_name is match('^[A-Za-z][A-Za-z0-9_.-]{0,63}$')
+
+- name: Inspect ZFS collector paths without following symlinks
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - /usr/local/libexec/microserver-zfs-metrics.py
+    - /usr/local/libexec/microserver-workstation-verify.py
+    - /etc/systemd/system/microserver-zfs-metrics.service
+    - /etc/systemd/system/microserver-zfs-metrics.timer
+    - /var/lib/microserver/node-exporter/zfs.prom
+    - /etc/microserver/monitoring/dashboard-folders/Infrastructure/zfs.json
+  register: microserver_zfs_paths
+
+- name: Refuse untrusted ZFS collector files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (item.stat.isreg | default(false) and not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+  loop: '{{ microserver_zfs_paths.results }}'
+
+- name: Install the bounded read-only ZFS collector
+  ansible.builtin.copy:
+    src: microserver-zfs-metrics.py
+    dest: /usr/local/libexec/microserver-zfs-metrics.py
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Refresh MicroServer ZFS metrics
+
+- name: Install the shared credential-free monitoring verifier
+  ansible.builtin.copy:
+    src: microserver-workstation-verify.py
+    dest: /usr/local/libexec/microserver-workstation-verify.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install the selected pool collector service
+  ansible.builtin.template:
+    src: microserver-zfs-metrics.service.j2
+    dest: /etc/systemd/system/microserver-zfs-metrics.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Refresh MicroServer ZFS metrics
+
+- name: Install the ZFS collector timer
+  ansible.builtin.copy:
+    src: microserver-zfs-metrics.timer
+    dest: /etc/systemd/system/microserver-zfs-metrics.timer
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install the dedicated ZFS dashboard
+  ansible.builtin.copy:
+    src: microserver-zfs-dashboard.json
+    dest: /etc/microserver/monitoring/dashboard-folders/Infrastructure/zfs.json
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable the ZFS metrics timer when monitoring is commissioned
+  ansible.builtin.systemd_service:
+    name: microserver-zfs-metrics.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: microserver_monitoring_enabled | bool and not ansible_check_mode

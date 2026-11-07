@@ -1,0 +1,173 @@
+---
+- name: Owner-run repair of nginx validation identity and runtime ownership
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  vars:
+    microserver_ui_runtime_paths:
+      - /run/microserver-ui/client-body
+      - /run/microserver-ui/proxy
+      - /run/microserver-ui/fastcgi
+      - /run/microserver-ui/uwsgi
+      - /run/microserver-ui/scgi
+    microserver_ui_repair_helpers:
+      - {name: microserver-ui-tls.py, previous: '291b31b1382def262c62d534d4985c206cbb3dbc4fc18a96429facf06a94391b'}
+      - {name: microserver-telemetry-guard.py, previous: '2b914dbaf4fab4deb35b30f970506fd6d835510bb5c08425d10492fe5245fb28'}
+    microserver_ui_large_asset_probe: |
+      import hashlib, socket, sys, urllib.request
+      host, address, path, digest, size, phase = sys.argv[1:]
+      size = int(size)
+      if not 262144 <= size <= 16777216 or socket.gethostbyname(host) != address:
+          raise SystemExit('STOP: Unexpected asset size or internal DNS target')
+      opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+      urls = [('BACKEND', 'http://127.0.0.1:3000' + path)]
+      if phase == 'both':
+          urls.append(('HTTPS_PROXY', 'https://' + host + path))
+      try:
+          for name, url in urls:
+              with opener.open(url, timeout=15) as response:
+                  body = response.read(size + 1)
+                  if response.status != 200 or len(body) != size or hashlib.sha256(body).hexdigest() != digest:
+                      raise ValueError('asset length or checksum differs')
+                  print(name + '_LARGE_ASSET=passed; BYTES=' + str(size) + '; SHA256=verified')
+      except Exception:
+          raise SystemExit('STOP: Complete asset transfer failed; protected response omitted') from None
+  pre_tasks:
+    - name: Require the commissioned production NAS and an owner terminal
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - ansible_play_hosts_all | length == 1
+          - ansible_facts.hostname == 'microserver'
+          - ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '13'
+          - microserver_ui_enabled | bool and microserver_ui_tls_enabled | bool
+          - microserver_ui_repair_nginx_sha256 is match('^[a-f0-9]{64}$')
+          - microserver_ui_repair_asset_sha256 is match('^[a-f0-9]{64}$')
+          - microserver_ui_repair_asset_path is match('^/public/build/[A-Za-z0-9._-]+[.]js$')
+          - not ansible_check_mode
+    - name: Inspect the trusted public configuration parents
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      loop: [/etc, /etc/microserver, /etc/microserver/ui, /usr, /usr/local, /usr/local/libexec, /run]
+      register: microserver_ui_repair_parents
+    - name: Require root-owned parents without writable groups or symlinks
+      ansible.builtin.assert:
+        that:
+          - item.stat.isdir | default(false) and not item.stat.islnk | default(false)
+          - item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$')
+      loop: '{{ microserver_ui_repair_parents.results }}'
+    - name: Inspect the retained public nginx configuration
+      ansible.builtin.stat:
+        path: /etc/microserver/ui/nginx.conf
+        follow: false
+        checksum_algorithm: sha256
+        get_mime: false
+      register: microserver_ui_repair_nginx
+    - name: Require the reviewed unchanged nginx configuration
+      ansible.builtin.assert:
+        that:
+          - microserver_ui_repair_nginx.stat.isreg | default(false) and not microserver_ui_repair_nginx.stat.islnk | default(false)
+          - microserver_ui_repair_nginx.stat.uid == 0 and microserver_ui_repair_nginx.stat.mode == '0644'
+          - microserver_ui_repair_nginx.stat.checksum == microserver_ui_repair_nginx_sha256
+    - name: Inspect both installed public validators before replacing either one
+      ansible.builtin.stat:
+        path: '/usr/local/libexec/{{ item.name }}'
+        follow: false
+        checksum_algorithm: sha256
+        get_mime: false
+      loop: '{{ microserver_ui_repair_helpers }}'
+      register: microserver_ui_repair_installed
+    - name: Require the reviewed old or already repaired validator versions
+      ansible.builtin.assert:
+        that:
+          - item.stat.isreg | default(false) and not item.stat.islnk | default(false)
+          - item.stat.uid == 0 and item.stat.mode == '0644'
+          - item.stat.checksum in [item.item.previous, lookup('ansible.builtin.file', playbook_dir + '/roles/debian_microserver/files/' + item.item.name, rstrip=false) | hash('sha256')]
+      loop: '{{ microserver_ui_repair_installed.results }}'
+    - name: Inspect only the service runtime directory and its five known children
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      loop: '{{ ["/run/microserver-ui"] + microserver_ui_runtime_paths }}'
+      register: microserver_ui_repair_runtime
+    - name: Refuse unexpected runtime path types owners or modes
+      ansible.builtin.assert:
+        that:
+          - item.stat.isdir | default(false) and not item.stat.islnk | default(false)
+          - item.stat.uid in [33, 65534] and item.stat.gid in [0, 33]
+          - item.stat.mode is match('^[0-7]{2}[0145][0145]$')
+          - item.item != '/run/microserver-ui' or (item.stat.uid == 33 and item.stat.gid == 33)
+      loop: '{{ microserver_ui_repair_runtime.results }}'
+    - name: Record runtime ownership without reading buffered requests or responses
+      ansible.builtin.debug:
+        msg: 'RUNTIME_OWNER={{ item.item }} uid={{ item.stat.uid }} gid={{ item.stat.gid }} mode={{ item.stat.mode }}'
+      loop: '{{ microserver_ui_repair_runtime.results }}'
+    - name: Read the running proxy master PID
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, show, microserver-ui.service, --property=MainPID, --value]
+      changed_when: false
+      register: microserver_ui_repair_pid_before
+    - name: Require the existing running proxy
+      ansible.builtin.assert:
+        that:
+          - microserver_ui_repair_pid_before.stdout is match('^[1-9][0-9]*$')
+    - name: Verify the complete Grafana asset directly before changing validators
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, '-c', '{{ microserver_ui_large_asset_probe }}', 'grafana.{{ microserver_ui_domain }}', '{{ microserver_ui_address }}', '{{ microserver_ui_repair_asset_path }}', '{{ microserver_ui_repair_asset_sha256 }}', '{{ microserver_ui_repair_asset_bytes | string }}', backend]
+      changed_when: false
+  tasks:
+    - name: Retain backups and install the corrected public validators
+      ansible.builtin.copy:
+        src: 'roles/debian_microserver/files/{{ item.name }}'
+        dest: '/usr/local/libexec/{{ item.name }}'
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
+      loop: '{{ microserver_ui_repair_helpers }}'
+      register: microserver_ui_repair_copies
+    - name: Restore only the known service temporary directories without recursion
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0750'
+        recurse: false
+      loop: '{{ microserver_ui_runtime_paths }}'
+    - name: Verify the active TLS configuration with the actual service identity
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-ui-tls.py, nginx, /etc/microserver/ui/nginx.conf]
+      changed_when: false
+    - name: Verify complete backend and trusted HTTPS asset readback
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, '-c', '{{ microserver_ui_large_asset_probe }}', 'grafana.{{ microserver_ui_domain }}', '{{ microserver_ui_address }}', '{{ microserver_ui_repair_asset_path }}', '{{ microserver_ui_repair_asset_sha256 }}', '{{ microserver_ui_repair_asset_bytes | string }}', both]
+      changed_when: false
+      register: microserver_ui_repair_asset_result
+    - name: Verify all configured HTTPS health redirects and anonymous API restrictions
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-ui-tls.py, probe]
+      changed_when: false
+    - name: Check that the proxy master has not restarted
+      ansible.builtin.command:
+        argv: [/usr/bin/systemctl, show, microserver-ui.service, --property=MainPID, --value]
+      changed_when: false
+      register: microserver_ui_repair_pid_after
+    - name: Require uninterrupted proxy operation
+      ansible.builtin.assert:
+        that: [microserver_ui_repair_pid_before.stdout == microserver_ui_repair_pid_after.stdout]
+    - name: Report completed readback and retained public validator backups
+      ansible.builtin.debug:
+        msg: ['{{ microserver_ui_repair_asset_result.stdout }}', 'GRAFANA_PROXY_REPAIR=passed; NGINX_RESTARTED=no; CONFIGURATION_AND_CERTIFICATE=unchanged']
+    - name: Report public code backup filenames when validators changed
+      ansible.builtin.debug:
+        msg: '{{ item.backup_file }}'
+      loop: '{{ microserver_ui_repair_copies.results }}'
+      when: item.backup_file is defined

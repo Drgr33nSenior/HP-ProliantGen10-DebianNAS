@@ -23,3 +23,7 @@
 - name: Stage and optionally start local monitoring
   ansible.builtin.import_tasks: monitoring.yml
   tags: [configure, monitoring]
+
+- name: Configure optional intranet UIs
+  ansible.builtin.import_tasks: ui.yml
+  tags: [configure, ui]

@@ -1,0 +1,132 @@
+---
+- name: Owner-run ZFS 2.4 package transition
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  pre_tasks:
+    - name: Require the commissioned production NAS and explicit owner operation
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - ansible_play_hosts_all | length == 1
+          - ansible_facts.hostname == 'microserver'
+          - ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - not ansible_check_mode
+          - microserver_zfs_upgrade_operation | default('') in ['stage', 'verify']
+    - name: Inspect the existing helper and protected parent directory
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        follow: false
+        get_checksum: false
+        get_mime: false
+      loop: [/usr/local/libexec, /usr/local/libexec/microserver-zfs-upgrade.py]
+      register: microserver_zfs_upgrade_paths
+    - name: Require root-owned helper paths
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists or (item.stat.uid == 0 and not item.stat.islnk | default(false) and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+          - not item.stat.exists or ((item.stat.isdir | default(false)) if item.item == '/usr/local/libexec' else (item.stat.isreg | default(false)))
+      loop: '{{ microserver_zfs_upgrade_paths.results }}'
+  tasks:
+    - name: Install the bounded package and pool metadata verifier
+      ansible.builtin.copy:
+        src: roles/debian_microserver/files/microserver-zfs-upgrade.py
+        dest: /usr/local/libexec/microserver-zfs-upgrade.py
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Read the commissioned package baseline before changing APT sources
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-upgrade.py, preflight, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+      changed_when: false
+      register: microserver_zfs_old_packages
+      no_log: true
+      failed_when: false
+      when: microserver_zfs_upgrade_operation == 'stage'
+    - name: Require preflight acceptance and report only the helper's bounded public reason
+      ansible.builtin.assert:
+        that: [microserver_zfs_old_packages.rc == 0]
+        # The reviewed helper emits only its own constant diagnostics as STOP
+        # lines. Keep arguments, subprocess output and tracebacks protected.
+        fail_msg: >-
+          {{ (microserver_zfs_old_packages.stderr | default('') |
+          regex_search('(?m)^STOP: [A-Za-z0-9 ;,._/+()-]{1,180}$')) |
+          default('STOP: ZFS preflight failed; protected diagnostics omitted', true) }}
+        quiet: true
+      when: microserver_zfs_upgrade_operation == 'stage'
+    - name: Stage the reviewed package upgrade without rebooting
+      when: microserver_zfs_upgrade_operation == 'stage'
+      block:
+        - name: Refresh signed Debian metadata for the retained packages
+          ansible.builtin.apt:
+            update_cache: true
+        - name: Download the exact installed packages through authenticated APT
+          ansible.builtin.command:
+            argv: '{{ ["/usr/bin/apt-get", "--download-only", "--reinstall", "--no-install-recommends", "--assume-yes", "install"] + (microserver_zfs_old_packages.stdout | from_json) }}'
+          environment: {DEBIAN_FRONTEND: noninteractive, LC_ALL: C}
+          changed_when: true
+        - name: Retain rollback packages and the existing enabled pool feature set
+          ansible.builtin.command:
+            argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-upgrade.py, prepare, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+          changed_when: true
+          no_log: true
+        - name: Add only the signed Debian contrib backports source
+          ansible.builtin.copy:
+            content: "deb [arch=amd64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian trixie-backports contrib\n"
+            dest: /etc/apt/sources.list.d/microserver-zfs-backports.list
+            owner: root
+            group: root
+            mode: '0644'
+            force: false
+        - name: Select only the ZFS 2.4 branch from backports
+          ansible.builtin.copy:
+            content: "Package: src:zfs-linux\nPin: version 2.4.*\nPin-Priority: 990\n\nPackage: src:zfs-linux\nPin: version *\nPin-Priority: -1\n"
+            dest: /etc/apt/preferences.d/microserver-zfs
+            owner: root
+            group: root
+            mode: '0644'
+            force: false
+        - name: Refresh authenticated package metadata including backports
+          ansible.builtin.apt:
+            update_cache: true
+        - name: Reject unrelated package changes before installation
+          ansible.builtin.command:
+            argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-upgrade.py, plan, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+          changed_when: false
+          no_log: true
+        - name: Install only the reviewed ZFS packages and build DKMS without starting services
+          ansible.builtin.apt:
+            name:
+              - zfs-dkms=2.4.4-1~bpo13+1
+              - zfsutils-linux=2.4.4-1~bpo13+1
+              - zfs-zed=2.4.4-1~bpo13+1
+              - libnvpair3linux=2.4.4-1~bpo13+1
+              - libuutil3linux=2.4.4-1~bpo13+1
+              - libzfs7linux=2.4.4-1~bpo13+1
+              - libzpool7linux=2.4.4-1~bpo13+1
+            state: present
+            install_recommends: false
+            policy_rc_d: 101
+            force_apt_get: true
+          environment: {DEBIAN_FRONTEND: noninteractive}
+        - name: Verify the new module build and retained Secure Boot signing identity
+          ansible.builtin.command:
+            argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-upgrade.py, staged, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+          changed_when: true
+          no_log: true
+        - name: Report the owner restart boundary
+          ansible.builtin.debug:
+            msg: ZFS 2.4.4 packages and DKMS are staged. Reboot the NAS in your maintenance window, then run the verify operation. Retain /var/lib/microserver/zfs-upgrade-2.4. Pool feature flags were not changed.
+    - name: Verify the running module and NAS services after the owner restart
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/microserver-zfs-upgrade.py, verify, --pool, '{{ microserver_pool_name }}', --guid, '{{ microserver_pool_guid }}']
+      changed_when: false
+      no_log: true
+      when: microserver_zfs_upgrade_operation == 'verify'
+    - name: Report post-restart acceptance
+      ansible.builtin.debug:
+        msg: ZFS_UPGRADE=verified; NAS_MONITORING_AND_UI=active; DATASET_MOUNTS=verified; NFS_BASELINE=accepted; HTTPS=verified; POOL_FEATURES=unchanged
+      when: microserver_zfs_upgrade_operation == 'verify'

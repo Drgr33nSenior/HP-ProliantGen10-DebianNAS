@@ -1,0 +1,255 @@
+---
+- name: Preserve an existing HTTPS proxy
+  ansible.builtin.import_tasks: ui-tls-preserve.yml
+
+- name: Inspect prior trace component before a UI-only update
+  ansible.builtin.stat:
+    path: /etc/microserver/monitoring/tempo.yaml
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_ui_existing_tempo
+
+- name: Require receiver variables when the trace component is installed
+  ansible.builtin.assert:
+    that:
+      - not microserver_ui_existing_tempo.stat.exists or microserver_telemetry_enabled | bool
+      - not microserver_ui_existing_tempo.stat.exists or microserver_ui_enabled | bool
+    fail_msg: Retain the commissioned receiver variables so a UI-only update cannot remove ingestion.
+
+- name: Validate the retained exact workstation source before rendering ingestion
+  ansible.builtin.assert:
+    that:
+      - microserver_ui_enabled | bool
+      - microserver_telemetry_client_address is string
+      - microserver_telemetry_client_address is match(microserver_nfs_private_ipv4_pattern)
+      - microserver_telemetry_client_address.split('.') | map('int') | max <= 255
+      - microserver_telemetry_client_address.split('.') | map('int') | join('.') == microserver_telemetry_client_address
+      - microserver_telemetry_client_address != microserver_ui_address
+  when: microserver_telemetry_enabled | bool
+
+- name: Inspect intranet proxy ownership before changing it
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop:
+    - /etc/microserver
+    - /etc/microserver/ui
+    - /etc/microserver/ui/nginx.conf
+    - /etc/systemd/system/microserver-ui.service
+    - /usr/local/libexec
+    - /usr/local/libexec/microserver-ui-compose.py
+  register: microserver_ui_paths
+
+- name: Require protected intranet proxy paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or (not item.stat.islnk | default(false) and item.stat.uid == 0 and item.stat.mode is match('^[0-7]{2}[0145][0145]$'))
+      - not item.stat.exists or ((item.stat.isdir | default(false)) if item.item in ['/etc/microserver', '/etc/microserver/ui', '/usr/local/libexec'] else (item.stat.isreg | default(false)))
+  loop: '{{ microserver_ui_paths.results }}'
+
+- name: Remember whether the managed UI unit exists
+  ansible.builtin.set_fact:
+    microserver_ui_previously_installed: '{{ microserver_ui_paths.results[3].stat.exists }}'
+
+- name: Validate intranet address and access scope before rendering
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', role_path + '/files/microserver-ui-validate.py') }}"
+      - "{{ {'address': microserver_ui_address, 'domain': microserver_ui_domain, 'networks': microserver_ui_allowed_networks} | to_json }}"
+  changed_when: false
+  check_mode: false
+  when: microserver_ui_enabled | bool
+
+- name: Require active monitoring and a real NAS address for intranet UIs
+  ansible.builtin.assert:
+    that:
+      - microserver_monitoring_enabled | bool
+      - microserver_ui_address in ansible_facts.all_ipv4_addresses
+    fail_msg: Activate monitoring and select an actual private NAS address before exposing the UIs.
+  when: microserver_ui_enabled | bool
+
+- name: Read the commissioned monitoring service state
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, is-active, microserver-monitoring.service]
+  register: microserver_ui_monitoring_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: microserver_ui_enabled | bool or microserver_ui_previously_installed | bool
+
+- name: Require the commissioned monitoring service before enabling the proxy
+  ansible.builtin.assert:
+    that:
+      - microserver_ui_monitoring_state.rc == 0
+    fail_msg: Start and qualify the existing monitoring stack before enabling its intranet UIs.
+  when: microserver_ui_enabled | bool
+
+- name: Detect an existing distribution Nginx service
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, is-active, nginx.service]
+  register: microserver_distribution_nginx
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: microserver_ui_enabled | bool
+
+- name: Refuse to take over an active distribution Nginx service
+  ansible.builtin.assert:
+    that:
+      - microserver_distribution_nginx.rc != 0
+    fail_msg: An existing Nginx service requires review; the intranet installer will not replace it.
+  when: microserver_ui_enabled | bool
+
+- name: Install the Debian intranet proxy without automatically opening a listener
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+  when: microserver_ui_enabled | bool
+
+- name: Keep the unused distribution Nginx service stopped and masked
+  ansible.builtin.systemd_service:
+    name: nginx.service
+    enabled: false
+    masked: true
+    state: stopped
+  when: microserver_ui_enabled | bool and not ansible_check_mode
+
+- name: Clear a failed start of the unused distribution Nginx service
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, reset-failed, nginx.service]
+  changed_when: true
+  when: microserver_ui_enabled | bool and microserver_distribution_nginx.stdout | default('') == 'failed' and not ansible_check_mode
+
+- name: Create the private proxy configuration directory
+  ansible.builtin.file:
+    path: /etc/microserver/ui
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: microserver_ui_enabled | bool
+
+- name: Prepare proxy runtime directories for configuration validation
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0750'
+  loop: [/run/microserver-ui, /run/microserver-ui/client-body, /run/microserver-ui/proxy, /run/microserver-ui/fastcgi, /run/microserver-ui/uwsgi, /run/microserver-ui/scgi]
+  when: microserver_ui_enabled | bool and not ansible_check_mode
+
+- name: Retain the commissioned TLS files before a full UI render
+  ansible.builtin.import_tasks: ui-tls-files.yml
+  when: microserver_ui_tls_enabled | bool
+
+- name: Render the restricted intranet virtual hosts
+  ansible.builtin.template:
+    src: ui-nginx.conf.j2
+    dest: /etc/microserver/ui/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/nginx -e stderr -t -c %s -g 'user www-data; pid /dev/null;'
+    backup: true
+  notify: Reload MicroServer intranet proxy
+  when: microserver_ui_enabled | bool and not microserver_ui_tls_enabled | bool
+
+- name: Render the commissioned HTTPS virtual hosts
+  ansible.builtin.template:
+    src: ui-nginx.conf.j2
+    dest: /etc/microserver/ui/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/bin/python3 /usr/local/libexec/microserver-ui-tls.py nginx %s
+  notify: Reload MicroServer intranet proxy
+  when: microserver_ui_tls_enabled | bool
+
+- name: Install the intranet proxy service
+  ansible.builtin.copy:
+    src: microserver-ui.service
+    dest: /etc/systemd/system/microserver-ui.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: microserver_ui_unit
+  notify: Reload MicroServer intranet proxy
+  when: microserver_ui_enabled | bool
+
+- name: Install the validator that preserves other monitoring settings
+  ansible.builtin.copy:
+    src: microserver-ui-compose.py
+    dest: /usr/local/libexec/microserver-ui-compose.py
+    owner: root
+    group: root
+    mode: '0644'
+  when: microserver_ui_enabled | bool or microserver_ui_previously_installed | bool
+
+- name: Update only the monitoring external URLs for intranet access
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: /etc/microserver/monitoring/compose.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/bin/python3 /usr/local/libexec/microserver-ui-compose.py %s
+    backup: true
+  notify: Apply MicroServer UI addresses
+  when: microserver_monitoring_enabled | bool and (microserver_ui_enabled | bool or microserver_ui_previously_installed | bool)
+
+- name: Apply the validated UI configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the restricted intranet proxy
+  ansible.builtin.systemd_service:
+    name: microserver-ui.service
+    enabled: true
+    state: started
+    daemon_reload: '{{ microserver_ui_unit.changed }}'
+  when: microserver_ui_enabled | bool and not ansible_check_mode
+
+- name: Stop the managed proxy after intranet access is disabled
+  ansible.builtin.systemd_service:
+    name: microserver-ui.service
+    enabled: false
+    state: stopped
+  when: not microserver_ui_enabled | bool and microserver_ui_previously_installed | bool and not ansible_check_mode
+
+- name: Verify each intranet virtual host through its private address
+  ansible.builtin.uri:
+    url: 'http://{{ microserver_ui_address }}{{ item.path }}'
+    headers:
+      Host: '{{ item.name }}.{{ microserver_ui_domain }}'
+    return_content: false
+    status_code: 200
+    timeout: 5
+  register: microserver_ui_readiness
+  until: microserver_ui_readiness.status | default(0) == 200
+  retries: 12
+  delay: 5
+  loop:
+    - {name: grafana, path: /api/health}
+    - {name: prometheus, path: /-/ready}
+    - {name: alertmanager, path: /-/ready}
+  when: microserver_ui_enabled | bool and not microserver_ui_tls_enabled | bool and not ansible_check_mode
+
+- name: Verify trusted HTTPS with the correct SNI names
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /usr/local/libexec/microserver-ui-tls.py, probe]
+  changed_when: false
+  register: microserver_ui_tls_ready
+  until: microserver_ui_tls_ready.rc == 0
+  retries: 12
+  delay: 2
+  when: microserver_ui_tls_enabled | bool and not ansible_check_mode

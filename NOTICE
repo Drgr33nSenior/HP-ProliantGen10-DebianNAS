@@ -22,3 +22,12 @@ retained under observability/unpoller; generated files bind the existing
 datasource and metric namespace and adapt selected panels for this deployment.
 The upstream MIT notice is retained in
 third-party-licenses/UnPoller-dashboards-MIT.txt.
+
+The optional Tempo configuration is adapted from the workstation telemetry
+profile covered by the MIT notice above. Its container reuses the reviewed
+Tempo 3.0.3 image pin; upstream source and release provenance are recorded in
+observability/versions.json. No Tempo binary is included in this repository.
+
+The workstation alert rules are adapted from the same MIT-covered workstation
+profile. Job selectors separate workstation observations from MicroServer
+metrics; the existing rule identities and thresholds are retained.

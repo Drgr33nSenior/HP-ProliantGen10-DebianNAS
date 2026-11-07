@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -eu
+if [ "${RENEWED_LINEAGE:-}" = /etc/letsencrypt/live/microserver-ui ]; then
+  exec /usr/bin/python3 /usr/local/libexec/microserver-ui-tls.py renew
+fi
