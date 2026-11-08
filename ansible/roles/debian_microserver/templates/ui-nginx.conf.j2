@@ -77,6 +77,28 @@ http {
         }
     }
 {% endfor %}
+{% if microserver_registry_enabled | default(false) | bool and microserver_ui_tls_enabled | bool %}
+    # BEGIN container registry
+    server {
+        listen {{ microserver_ui_address }}:443 ssl;
+        server_name {{ microserver_registry_host }}.{{ microserver_ui_domain }};
+        # Server-level access rules replace the UI allowlist for this host only.
+{% for network in microserver_registry_allowed_networks %}
+        allow {{ network }};
+{% endfor %}
+        deny all;
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_send_timeout 900s;
+        proxy_read_timeout 900s;
+        # zui and its assets are served at /, the OCI API at /v2/.
+        location / {
+            proxy_pass http://127.0.0.1:{{ microserver_registry_port }};
+        }
+    }
+    # END container registry
+{% endif %}
 {% if microserver_telemetry_enabled | bool %}
     # BEGIN workstation ingestion
     server {

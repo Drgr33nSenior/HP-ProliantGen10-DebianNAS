@@ -1,0 +1,3 @@
+# Managed: Kubernetes NFS volumes for one K3s node. all_squash maps every client
+# UID/GID to the non-login k8s-nfs account; sync keeps writes durable.
+/srv/microserver/k8s {{ microserver_k8s_nfs_client }}(rw,sync,all_squash,anonuid={{ microserver_k8s_nfs_uid }},anongid={{ microserver_k8s_nfs_gid }},no_subtree_check,mountpoint,sec=sys)

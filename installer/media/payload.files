@@ -122,3 +122,14 @@ observability/dashboards/workstation.json
 installer/media/preseed.cfg
 installer/media/finish.sh
 installer/media/80microserver-minimal
+ansible/owner-k8s-storage.yml
+ansible/owner-registry.yml
+ansible/roles/debian_microserver/files/microserver-registry.service
+ansible/roles/debian_microserver/tasks/k8s-storage.yml
+ansible/roles/debian_microserver/tasks/pool-verify.yml
+ansible/roles/debian_microserver/tasks/registry.yml
+ansible/roles/debian_microserver/tasks/registry-verify.yml
+ansible/roles/debian_microserver/templates/k8s-exports.j2
+ansible/roles/debian_microserver/templates/registry-compose.yaml.j2
+ansible/roles/debian_microserver/templates/registry-config.json.j2
+docs/REGISTRY.md

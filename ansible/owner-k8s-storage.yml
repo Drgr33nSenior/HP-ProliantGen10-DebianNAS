@@ -1,0 +1,28 @@
+---
+# Owner-run component update: one dedicated Kubernetes NFS dataset and export.
+# Does not change disks, the pool, other datasets, other exports or the UIs.
+- name: Owner-run MicroServer Kubernetes NFS storage
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  # Run queued handlers (NFS restart, proxy restart) even if a later task fails,
+  # so a rerun never finds changed files with an unapplied service state.
+  force_handlers: true
+  pre_tasks:
+    - name: Require one commissioned NAS and the explicit storage component
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - microserver_k8s_storage_enabled | default(false) | bool
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: Run this component only for one commissioned Debian 13 AMD64 NAS with microserver_k8s_storage_enabled.
+  tasks:
+    - name: Configure only the Kubernetes NFS dataset and export
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: k8s-storage

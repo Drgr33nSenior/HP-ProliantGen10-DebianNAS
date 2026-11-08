@@ -118,7 +118,7 @@
 
 - name: Read the actual dataset type, mountpoint and mounted state
   ansible.builtin.command:
-    argv: [zfs, get, -H, -o, value, type,mountpoint,mounted, '{{ microserver_pool_name }}/shared']
+    argv: [zfs, get, -H, -o, value, 'type,mountpoint,mounted', '{{ microserver_pool_name }}/shared']
   register: microserver_dataset_properties
   changed_when: false
   check_mode: false

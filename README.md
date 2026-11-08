@@ -300,8 +300,9 @@ Failed or stale collection raises a local alert. See
 The [ZFS dashboard and alerts](docs/ZFS-MONITORING.md) add pool capacity, device
 errors, ARC behaviour and the latest scrub/resilver record through the same node
 exporter. Existing installations use the scoped owner-run `ansible/owner-zfs.yml`
-update. See [Kubernetes storage choices](docs/KUBERNETES-STORAGE.md) before moving
-application claims to NFS.
+update. See [Kubernetes storage choices](docs/KUBERNETES-STORAGE.md) for the
+dedicated Kubernetes NFS export, and the [container registry](docs/REGISTRY.md)
+for the Zot mirror and private image store.
 
 For pool, dataset and snapshot management, use the optional
 [Cockpit ZFS management workflow](docs/ZFS-MANAGEMENT.md). It separates the

@@ -1,0 +1,156 @@
+---
+# Kubernetes NFS volumes: a dedicated dataset exported read-write to exactly one
+# K3s node. all_squash maps every client UID/GID to one non-login account, so
+# the CSI driver can create per-volume directories and pods running as any UID
+# share one numeric owner on the NAS. Existing shares and exports are untouched.
+- name: Require the Kubernetes NFS scope
+  ansible.builtin.assert:
+    that:
+      - microserver_k8s_nfs_client is string
+      - microserver_k8s_nfs_client is match(microserver_nfs_private_ipv4_pattern)
+      - microserver_k8s_nfs_client.split('.') | map('int') | max <= 255
+      - microserver_k8s_nfs_client.split('.') | map('int') | join('.') == microserver_k8s_nfs_client
+      - microserver_k8s_nfs_uid | int >= 1000 and microserver_k8s_nfs_uid | int < 60000
+      - microserver_k8s_nfs_gid | int >= 1000 and microserver_k8s_nfs_gid | int < 60000
+      - microserver_k8s_quota is match('^[1-9][0-9]{0,4}[GT]$')
+    fail_msg: Supply one canonical private IPv4 K3s node, a dedicated non-system UID/GID and a quota such as 1T.
+
+- name: Verify the reviewed pool
+  ansible.builtin.import_tasks: pool-verify.yml
+
+- name: Create the Kubernetes NFS group
+  ansible.builtin.group:
+    name: k8s-nfs
+    gid: '{{ microserver_k8s_nfs_gid }}'
+    system: false
+
+- name: Create the non-login Kubernetes NFS owner
+  ansible.builtin.user:
+    name: k8s-nfs
+    uid: '{{ microserver_k8s_nfs_uid }}'
+    group: k8s-nfs
+    create_home: false
+    home: /nonexistent
+    shell: /usr/sbin/nologin
+    password: '!'
+
+- name: Inspect the Kubernetes dataset
+  ansible.builtin.command:
+    argv: [zfs, list, -H, -o, name, '{{ microserver_pool_name }}/k8s']
+  register: microserver_k8s_dataset
+  changed_when: false
+  failed_when: microserver_k8s_dataset.rc not in [0, 1]
+  check_mode: false
+
+- name: Inspect the Kubernetes mount path without following symlinks
+  ansible.builtin.stat:
+    path: /srv/microserver/k8s
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_k8s_path
+
+- name: Refuse to mount a new dataset over an existing directory
+  ansible.builtin.assert:
+    that:
+      - microserver_k8s_dataset.rc == 0 or not microserver_k8s_path.stat.exists
+      - not microserver_k8s_path.stat.islnk | default(false)
+    fail_msg: /srv/microserver/k8s exists without its dataset or is a symlink; review it before continuing.
+
+- name: Create only the missing Kubernetes dataset
+  ansible.builtin.command:
+    argv: [zfs, create, -o, mountpoint=/srv/microserver/k8s, -o, compression=lz4, -o, atime=off,
+           -o, xattr=sa, -o, 'quota={{ microserver_k8s_quota }}', '{{ microserver_pool_name }}/k8s']
+  when: microserver_k8s_dataset.rc == 1
+
+- name: Read the Kubernetes dataset state and quota
+  ansible.builtin.command:
+    argv: [zfs, get, -H, -o, value, 'type,mountpoint,mounted,quota', '{{ microserver_pool_name }}/k8s']
+  register: microserver_k8s_properties
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode or microserver_k8s_dataset.rc == 0
+
+- name: Require the mounted dedicated dataset
+  ansible.builtin.assert:
+    that:
+      - microserver_k8s_properties.stdout_lines[:3] == ['filesystem', '/srv/microserver/k8s', 'yes']
+    fail_msg: The Kubernetes export must be the mounted ZFS dataset; never fall back to the OS SSD.
+  when: not ansible_check_mode or microserver_k8s_dataset.rc == 0
+
+- name: Apply the reviewed Kubernetes quota
+  ansible.builtin.command:
+    argv: [zfs, set, 'quota={{ microserver_k8s_quota }}', '{{ microserver_pool_name }}/k8s']
+  when:
+    - not ansible_check_mode or microserver_k8s_dataset.rc == 0
+    - microserver_k8s_properties.stdout_lines[3] != microserver_k8s_quota
+
+- name: Set ownership on the export root only
+  ansible.builtin.file:
+    path: /srv/microserver/k8s
+    state: directory
+    owner: '{{ microserver_k8s_nfs_uid }}'
+    group: '{{ microserver_k8s_nfs_gid }}'
+    mode: '0750'
+    follow: false
+  when: not ansible_check_mode or microserver_k8s_dataset.rc == 0
+
+- name: Create NFS configuration directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [/etc/exports.d, /etc/nfs.conf.d]
+
+# Same content as storage.yml: whichever component runs first, the server is
+# NFSv4-only over TCP.
+- name: Restrict the NFS server to NFSv4 over TCP
+  ansible.builtin.copy:
+    dest: /etc/nfs.conf.d/90-microserver.conf
+    content: |
+      [nfsd]
+      vers2=n
+      vers3=n
+      vers4=y
+      udp=n
+      tcp=y
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart MicroServer NFS
+
+- name: Export only the Kubernetes dataset to the K3s node
+  ansible.builtin.template:
+    src: k8s-exports.j2
+    dest: /etc/exports.d/microserver-k8s.exports
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart MicroServer NFS
+
+- name: Enable the configured NFS server
+  ansible.builtin.systemd_service:
+    name: nfs-kernel-server
+    enabled: true
+    state: started
+
+- name: Apply the export before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the active exports
+  ansible.builtin.command:
+    argv: [exportfs, -v]
+  register: microserver_k8s_exports
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require the exact active Kubernetes export
+  ansible.builtin.assert:
+    that:
+      - microserver_k8s_exports.stdout is search('/srv/microserver/k8s\s+' ~ (microserver_k8s_nfs_client | regex_escape) ~ '\(')
+      - microserver_k8s_exports.stdout is search('all_squash')
+      - microserver_k8s_exports.stdout is search('anonuid=' ~ microserver_k8s_nfs_uid ~ ',anongid=' ~ microserver_k8s_nfs_gid)
+    fail_msg: The active NFS export differs from the reviewed Kubernetes export.
+  when: not ansible_check_mode

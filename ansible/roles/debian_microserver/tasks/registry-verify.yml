@@ -1,0 +1,42 @@
+---
+# Runs after the UI proxy render: prove trusted HTTPS, anonymous pulls through
+# the mirror, refusal of anonymous pushes and the zui page at /.
+# Uses the NAS address with the registry SNI name: no DNS lookup or extra package.
+- name: Verify the registry over trusted HTTPS
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import http.client, json, socket, ssl, sys
+        host, address = sys.argv[1], sys.argv[2]
+        accept = ('application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, '
+                  'application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json')
+        def status(method, path):
+            raw = socket.create_connection((address, 443), timeout=180)
+            tls = ssl.create_default_context().wrap_socket(raw, server_hostname=host)
+            connection = http.client.HTTPSConnection(host, timeout=180)
+            connection.sock = tls
+            try:
+                connection.request(method, path, headers={'Accept': accept})
+                response = connection.getresponse()
+                response.read(1048577)
+                return response.status
+            finally:
+                connection.close()
+        checks = [('api', 'GET', '/v2/', 200),
+                  ('mirror-pull', 'GET', '/v2/registry.k8s.io/pause/manifests/3.10', 200),
+                  ('anonymous-push-refused', 'POST', '/v2/local/verify/blobs/uploads/', 401),
+                  ('ui', 'GET', '/', 200)]
+        results = {name: status(method, path) for name, method, path, _ in checks}
+        print(json.dumps(results, sort_keys=True))
+        if any(results[name] != expected for name, _, _, expected in checks):
+            sys.exit('Registry HTTPS verification failed')
+      - '{{ microserver_registry_host }}.{{ microserver_ui_domain }}'
+      - '{{ microserver_ui_address }}'
+  register: microserver_registry_https
+  changed_when: false
+  retries: 6
+  delay: 5
+  until: microserver_registry_https.rc == 0
+  when: not ansible_check_mode

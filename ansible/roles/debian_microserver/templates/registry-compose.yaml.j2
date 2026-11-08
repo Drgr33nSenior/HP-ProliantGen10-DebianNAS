@@ -1,0 +1,21 @@
+# Zot binds to loopback only; the intranet proxy publishes it over HTTPS.
+services:
+  zot:
+    image: {{ microserver_registry_image }}
+    user: '{{ microserver_registry_uid }}:{{ microserver_registry_gid }}'
+    network_mode: host
+    command: [serve, /etc/zot/config.json]
+    volumes:
+      - /etc/microserver/registry/config.json:/etc/zot/config.json:ro
+      - /etc/microserver/private/registry-htpasswd:/etc/zot/htpasswd:ro
+      - /srv/microserver/registry:/var/lib/registry
+    tmpfs: ['/tmp:size=256m,mode=1777']
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 512
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}

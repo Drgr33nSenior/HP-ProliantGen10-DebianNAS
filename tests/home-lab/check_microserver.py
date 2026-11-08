@@ -410,7 +410,8 @@ class MicroServerTests(unittest.TestCase):
                 if argv[:1] == ['zpool']:
                     self.assertIn(argv[1], ['get', 'list'])
                 if argv[:2] == ['zfs', 'create']:
-                    self.assertEqual(task['when'], 'microserver_dataset.rc == 1')
+                    self.assertIn(task['when'], ['microserver_dataset.rc == 1', 'microserver_k8s_dataset.rc == 1',
+                                                 'microserver_registry_dataset.rc == 1'])
                     self.assertNotIn('-f', argv)
                 if task.get('check_mode') is False:
                     storage_read = argv[:2] in [['zpool', 'get'], ['zpool', 'list'], ['zfs', 'list'], ['zfs', 'get']]
@@ -430,7 +431,15 @@ class MicroServerTests(unittest.TestCase):
                         ['/usr/bin/systemctl', 'is-active', 'microserver-monitoring.service', 'microserver-ui.service'],
                         ['/usr/bin/docker', 'image', 'inspect', '--format', "{{ '{{.Id}}' }}", '{{ microserver_tempo_image }}'],
                     ]
-                    self.assertTrue(storage_read or hardware_read or dns_read or ui_status_read or ui_scope_read or telemetry_read, argv)
+                    registry_read = source.name == 'registry.yml' and (
+                        task['name'] == 'Require canonical RFC1918 client networks' and argv[:2] == ['/usr/bin/python3', '-c']
+                        and argv[3:] == ['{{ microserver_registry_allowed_networks | to_json }}']
+                        or argv == ['grep', '-c', '-E', '^{{ microserver_registry_publisher }}:\\$2[aby]\\$[0-9]{2}\\$',
+                                    '/etc/microserver/private/registry-htpasswd']
+                        or argv == ['/usr/bin/docker-compose', '--project-name', 'microserver-registry', '--file',
+                                    '/etc/microserver/registry/compose.yaml', 'config', '--quiet'])
+                    self.assertTrue(storage_read or hardware_read or dns_read or ui_status_read or ui_scope_read
+                                    or telemetry_read or registry_read, argv)
 
     def test_path_guards(self):
         task = next(task for task in self.storage if task['name'].startswith('Refuse untrusted'))
