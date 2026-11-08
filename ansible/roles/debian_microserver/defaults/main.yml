@@ -27,3 +27,24 @@ microserver_unifi_controller_ip: ''
 microserver_unifi_auth_method: api_key
 microserver_unifi_username: ''
 microserver_unifi_custom_ca: false
+# Kubernetes NFS volumes: one dedicated dataset exported to one K3s node.
+microserver_k8s_storage_enabled: false
+microserver_k8s_nfs_client: ''
+microserver_k8s_nfs_uid: 2000
+microserver_k8s_nfs_gid: 2000
+microserver_k8s_quota: 1T
+# OCI registry: Zot pull-through mirror and private store behind the UI proxy.
+microserver_registry_enabled: false
+microserver_registry_host: registry
+microserver_registry_port: 5000
+microserver_registry_uid: 2001
+microserver_registry_gid: 2001
+microserver_registry_quota: 1T
+microserver_registry_publisher: publisher
+microserver_registry_allowed_networks: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
+microserver_registry_image: 'ghcr.io/project-zot/zot-linux-amd64:v2.1.23@sha256:b68f727fe35c1eb45b2ae91519dfb0e33192d69b5104882c3e7809b7146c4a02'
+microserver_registry_upstreams:
+  - {prefix: docker.io, url: 'https://registry-1.docker.io'}
+  - {prefix: ghcr.io, url: 'https://ghcr.io'}
+  - {prefix: registry.k8s.io, url: 'https://registry.k8s.io'}
+  - {prefix: quay.io, url: 'https://quay.io'}

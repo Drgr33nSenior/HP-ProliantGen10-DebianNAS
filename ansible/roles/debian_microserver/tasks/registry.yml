@@ -1,0 +1,223 @@
+---
+# OCI registry: Zot on loopback, published through the existing HTTPS proxy.
+# Anonymous pulls; the owner-created publisher account may push under local/.
+- name: Require the registry scope and its HTTPS proxy
+  ansible.builtin.assert:
+    that:
+      - microserver_ui_enabled | bool
+      - microserver_ui_tls_enabled | bool
+      - microserver_registry_host is match('^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$')
+      - microserver_registry_host not in ['grafana', 'prometheus', 'alertmanager', 'microserver']
+      - microserver_registry_port | int > 1024 and microserver_registry_port | int < 65536
+      - microserver_registry_port | int not in [3000, 3100, 3200, 4318, 8080, 9090, 9091, 9093]
+      - microserver_registry_uid | int >= 1000 and microserver_registry_uid | int < 60000
+      - microserver_registry_gid | int >= 1000 and microserver_registry_gid | int < 60000
+      - microserver_registry_quota is match('^[1-9][0-9]{0,4}[GT]$')
+      - microserver_registry_publisher is match('^[a-z][a-z0-9_-]{0,31}$')
+      - microserver_registry_image is match('^ghcr[.]io/project-zot/zot-linux-amd64:v[0-9]+[.][0-9]+[.][0-9]+@sha256:[a-f0-9]{64}$')
+      - microserver_registry_upstreams | length > 0
+      - microserver_registry_allowed_networks | length > 0
+    fail_msg: The registry requires the commissioned HTTPS proxy, a distinct host label, a digest-pinned Zot image and private client networks.
+
+- name: Require canonical RFC1918 client networks
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import ipaddress, json, sys
+        private = [ipaddress.ip_network(n) for n in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16')]
+        for value in json.loads(sys.argv[1]):
+            network = ipaddress.ip_network(value, strict=True)
+            assert str(network) == value and network.version == 4, value
+            assert any(network.subnet_of(p) for p in private), value
+      - '{{ microserver_registry_allowed_networks | to_json }}'
+  changed_when: false
+  check_mode: false
+
+- name: Require exact HTTPS upstream registries
+  ansible.builtin.assert:
+    that:
+      - item.prefix is match('^[a-z0-9]+([.-][a-z0-9]+)*[.][a-z]{2,}$')
+      - item.url is match('^https://[a-z0-9]+([.-][a-z0-9]+)*[.][a-z]{2,}$')
+      - item.prefix != 'local'
+    fail_msg: Each upstream needs a DNS-style prefix and an HTTPS registry URL.
+  loop: '{{ microserver_registry_upstreams }}'
+  loop_control:
+    label: '{{ item.prefix }}'
+
+- name: Verify the reviewed pool
+  ansible.builtin.import_tasks: pool-verify.yml
+
+- name: Create the registry group
+  ansible.builtin.group:
+    name: zot-registry
+    gid: '{{ microserver_registry_gid }}'
+
+- name: Create the non-login registry account
+  ansible.builtin.user:
+    name: zot-registry
+    uid: '{{ microserver_registry_uid }}'
+    group: zot-registry
+    create_home: false
+    home: /nonexistent
+    shell: /usr/sbin/nologin
+    password: '!'
+
+- name: Inspect the registry dataset
+  ansible.builtin.command:
+    argv: [zfs, list, -H, -o, name, '{{ microserver_pool_name }}/registry']
+  register: microserver_registry_dataset
+  changed_when: false
+  failed_when: microserver_registry_dataset.rc not in [0, 1]
+  check_mode: false
+
+- name: Inspect the registry mount path without following symlinks
+  ansible.builtin.stat:
+    path: /srv/microserver/registry
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_registry_path
+
+- name: Refuse to mount a new registry dataset over an existing directory
+  ansible.builtin.assert:
+    that:
+      - microserver_registry_dataset.rc == 0 or not microserver_registry_path.stat.exists
+      - not microserver_registry_path.stat.islnk | default(false)
+    fail_msg: /srv/microserver/registry exists without its dataset or is a symlink; review it before continuing.
+
+- name: Create only the missing registry dataset
+  ansible.builtin.command:
+    argv: [zfs, create, -o, mountpoint=/srv/microserver/registry, -o, compression=lz4, -o, atime=off,
+           -o, recordsize=1M, -o, xattr=sa, -o, 'quota={{ microserver_registry_quota }}',
+           '{{ microserver_pool_name }}/registry']
+  when: microserver_registry_dataset.rc == 1
+
+- name: Read the registry dataset state and quota
+  ansible.builtin.command:
+    argv: [zfs, get, -H, -o, value, 'type,mountpoint,mounted,quota', '{{ microserver_pool_name }}/registry']
+  register: microserver_registry_properties
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode or microserver_registry_dataset.rc == 0
+
+- name: Require the mounted registry dataset
+  ansible.builtin.assert:
+    that:
+      - microserver_registry_properties.stdout_lines[:3] == ['filesystem', '/srv/microserver/registry', 'yes']
+    fail_msg: Registry storage must be the mounted ZFS dataset; never fall back to the OS SSD.
+  when: not ansible_check_mode or microserver_registry_dataset.rc == 0
+
+- name: Apply the reviewed registry quota
+  ansible.builtin.command:
+    argv: [zfs, set, 'quota={{ microserver_registry_quota }}', '{{ microserver_pool_name }}/registry']
+  when:
+    - not ansible_check_mode or microserver_registry_dataset.rc == 0
+    - microserver_registry_properties.stdout_lines[3] != microserver_registry_quota
+
+- name: Give the registry account its storage root
+  ansible.builtin.file:
+    path: /srv/microserver/registry
+    state: directory
+    owner: '{{ microserver_registry_uid }}'
+    group: '{{ microserver_registry_gid }}'
+    mode: '0750'
+    follow: false
+  when: not ansible_check_mode or microserver_registry_dataset.rc == 0
+
+- name: Install htpasswd for the owner-created publisher credential
+  ansible.builtin.apt:
+    name: apache2-utils
+    state: present
+    install_recommends: false
+
+- name: Inspect the publisher credential without reading it
+  ansible.builtin.stat:
+    path: /etc/microserver/private/registry-htpasswd
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_registry_htpasswd
+
+- name: Require the owner-created publisher credential
+  ansible.builtin.assert:
+    that:
+      - microserver_registry_htpasswd.stat.exists
+      - microserver_registry_htpasswd.stat.isreg | default(false)
+      - not microserver_registry_htpasswd.stat.islnk | default(true)
+      - microserver_registry_htpasswd.stat.uid == 0
+      - microserver_registry_htpasswd.stat.gid == microserver_registry_gid | int
+      - microserver_registry_htpasswd.stat.mode == '0440'
+      - microserver_registry_htpasswd.stat.size > 0
+    fail_msg: >-
+      Create the credential first, entering the password only at the hidden prompt:
+      sudo htpasswd -B -C 12 -c /etc/microserver/private/registry-htpasswd {{ microserver_registry_publisher }};
+      sudo chown root:{{ microserver_registry_gid }} /etc/microserver/private/registry-htpasswd;
+      sudo chmod 0440 /etc/microserver/private/registry-htpasswd
+
+- name: Require exactly one bcrypt entry for the publisher
+  ansible.builtin.command:
+    argv: [grep, -c, -E, '^{{ microserver_registry_publisher }}:\$2[aby]\$[0-9]{2}\$', /etc/microserver/private/registry-htpasswd]
+  register: microserver_registry_htpasswd_entries
+  changed_when: false
+  failed_when: microserver_registry_htpasswd_entries.stdout | trim != '1'
+  check_mode: false
+
+- name: Create the registry configuration directory
+  ansible.builtin.file:
+    path: /etc/microserver/registry
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Render the registry configuration and Compose project
+  ansible.builtin.template:
+    src: '{{ item.src }}'
+    dest: '/etc/microserver/registry/{{ item.dest }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - {src: registry-config.json.j2, dest: config.json}
+    - {src: registry-compose.yaml.j2, dest: compose.yaml}
+  notify: Restart MicroServer registry
+
+- name: Install the registry service
+  ansible.builtin.copy:
+    src: microserver-registry.service
+    dest: /etc/systemd/system/microserver-registry.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: microserver_registry_unit
+  notify: Restart MicroServer registry
+
+- name: Validate the registry Compose project
+  ansible.builtin.command:
+    argv: [/usr/bin/docker-compose, --project-name, microserver-registry, --file, /etc/microserver/registry/compose.yaml, config, --quiet]
+  changed_when: false
+  check_mode: false
+
+- name: Enable the registry service
+  ansible.builtin.systemd_service:
+    name: microserver-registry.service
+    enabled: true
+    state: started
+    daemon_reload: '{{ microserver_registry_unit.changed }}'
+  when: not ansible_check_mode
+
+- name: Apply registry changes before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the registry API on loopback
+  ansible.builtin.uri:
+    url: 'http://127.0.0.1:{{ microserver_registry_port }}/v2/'
+    status_code: 200
+    timeout: 5
+  register: microserver_registry_ready
+  until: microserver_registry_ready.status | default(0) == 200
+  retries: 24
+  delay: 5
+  when: not ansible_check_mode

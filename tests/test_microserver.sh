@@ -18,13 +18,16 @@ trap 'rm -rf -- "$work"' EXIT
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_cockpit.py"
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_houston.py"
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_zfs_write.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_registry.py"
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_receivers_native.py"
 if [[ $(uname -s) == Linux ]] && command -v systemd-analyze >/dev/null 2>&1; then
   cp "$root/ansible/roles/debian_microserver/files/microserver-docker-metrics.service" "$work/"
   cp "$root/ansible/roles/debian_microserver/files/microserver-docker-metrics.timer" "$work/"
+  cp "$root/ansible/roles/debian_microserver/files/microserver-registry.service" "$work/"
   cp "$root/tests/fixtures/microserver/docker.service" "$work/"
   SYSTEMD_UNIT_PATH="$work:" systemd-analyze verify --man=no --generators=no \
-    "$work/microserver-docker-metrics.service" "$work/microserver-docker-metrics.timer"
+    "$work/microserver-docker-metrics.service" "$work/microserver-docker-metrics.timer" \
+    "$work/microserver-registry.service"
 fi
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   docker compose --project-name microserver --file "$work/compose.yaml" config --quiet

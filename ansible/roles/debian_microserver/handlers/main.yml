@@ -49,3 +49,10 @@
     state: restarted
     daemon_reload: true
   when: microserver_ui_enabled | bool and not ansible_check_mode
+
+# Zot reads its bind-mounted configuration only at start; reload recreates it.
+- name: Restart MicroServer registry
+  ansible.builtin.systemd_service:
+    name: microserver-registry.service
+    state: reloaded
+    daemon_reload: true

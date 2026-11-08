@@ -1,0 +1,42 @@
+---
+# Owner-run component update: the Zot registry, then a full UI proxy render so
+# its HTTPS virtual host joins the commissioned ones. Pass the latest owner
+# profile unchanged (Cockpit, Houston, telemetry and TLS flags) plus
+# microserver_registry_enabled.
+- name: Owner-run MicroServer OCI registry
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  # Run queued handlers (NFS restart, proxy restart) even if a later task fails,
+  # so a rerun never finds changed files with an unapplied service state.
+  force_handlers: true
+  pre_tasks:
+    - name: Require one commissioned NAS, HTTPS and the explicit registry component
+      ansible.builtin.assert:
+        that:
+          - microserver_environment | default('unmapped') == 'prd'
+          - microserver_owner_install | default(false) | bool
+          - microserver_registry_enabled | default(false) | bool
+          - microserver_ui_enabled | default(false) | bool
+          - microserver_ui_tls_enabled | default(false) | bool
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: Run this component only for one commissioned Debian 13 AMD64 NAS with HTTPS and microserver_registry_enabled.
+  tasks:
+    - name: Configure the registry service and its storage
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: registry
+
+    - name: Publish the registry through the commissioned HTTPS proxy
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: ui
+
+    - name: Verify the published registry
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: registry-verify

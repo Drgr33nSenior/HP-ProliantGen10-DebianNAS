@@ -1,0 +1,75 @@
+# Container registry
+
+The optional registry component runs [Zot](https://zotregistry.dev) on the NAS.
+It is a pull-through mirror for public registries and a private store for images
+you build. Clients use `https://registry.<ui-domain>`, for example
+`registry.lan.thespry.family`.
+
+| Path | Content | Access |
+| --- | --- | --- |
+| `docker.io/…`, `ghcr.io/…`, `registry.k8s.io/…`, `quay.io/…` | On-demand mirrors, linux/amd64 only | Anonymous pull; nobody can push |
+| `local/…` | Your own images | Anonymous pull; push requires the publisher account |
+
+A mirrored image is fetched from upstream on its first pull and served from the
+NAS afterwards. Digest-pinned references keep their digests.
+
+## Design
+
+- Zot runs as a hardened container (read-only root, no capabilities,
+  `no-new-privileges`, 1 GiB memory, one CPU) as the non-login `zot-registry`
+  account (UID/GID 2001). It listens on `127.0.0.1:5000` only.
+- The intranet HTTPS proxy publishes only `/v2/` at
+  `registry.<ui-domain>:443` with the existing wildcard certificate. Its
+  allowlist defaults to all RFC1918 networks
+  (`microserver_registry_allowed_networks`); gateway firewall policies still
+  decide which networks can reach the NAS. UI hosts keep their own allowlist.
+- Blobs are stored on the `nas/registry` dataset (`/srv/microserver/registry`,
+  lz4, 1M records, 1 TiB quota by default), with deduplication and garbage
+  collection enabled. The dataset is not exported over NFS.
+- The image is pinned by digest in `microserver_registry_image`. Zot does not
+  publish signatures for it on GHCR, and its binary differs from the separately
+  built release asset; the trust basis is the same as the other digest-pinned
+  NAS images.
+
+## Owner commissioning
+
+HTTPS must already be commissioned ([INTRANET-TLS.md](INTRANET-TLS.md)).
+
+1. Add an internal DNS A record `registry.<ui-domain>` for the NAS address.
+2. Create the publisher credential on the NAS. Enter the password only at the
+   hidden prompt; it is never stored in Git, inventory or logs:
+
+   ```sh
+   sudo apt-get install --no-install-recommends apache2-utils
+   sudo htpasswd -B -C 12 -c /etc/microserver/private/registry-htpasswd publisher
+   sudo chown root:2001 /etc/microserver/private/registry-htpasswd
+   sudo chmod 0440 /etc/microserver/private/registry-htpasswd
+   ```
+
+3. Run `ansible/owner-registry.yml` with the latest owner profile plus
+   `microserver_registry_enabled: true`. The play creates the dataset and
+   account, starts `microserver-registry.service`, re-renders the HTTPS proxy
+   with the registry host, then verifies trusted HTTPS, an anonymous mirrored
+   pull, refusal of anonymous pushes and a 404 outside `/v2/`.
+
+To rotate the publisher password, rerun the `htpasswd` command without `-c`.
+
+## Clients
+
+K3s nodes use `/etc/rancher/k3s/registries.yaml` mirrors that rewrite each
+upstream to its prefix; containerd falls back to the upstream when the NAS is
+unavailable. To publish an image:
+
+```sh
+podman login registry.lan.thespry.family   # user: publisher
+podman push my-image registry.lan.thespry.family/local/my-image:1.0
+```
+
+## Operations
+
+- Status: `systemctl status microserver-registry.service`; logs:
+  `docker logs microserver-registry-zot-1`.
+- Capacity: `zfs list nas/registry`. Raise the quota with the owner profile
+  value `microserver_registry_quota` and rerun the play.
+- Mirrored content is a cache and can be re-fetched; images under `local/` are
+  not. Include `nas/registry` in the backup design before relying on it.

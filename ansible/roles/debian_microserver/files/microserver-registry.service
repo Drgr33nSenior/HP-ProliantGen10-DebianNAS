@@ -1,0 +1,22 @@
+[Unit]
+Description=MicroServer OCI registry (Zot)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/microserver/registry
+ConditionPathExists=/etc/microserver/private/registry-htpasswd
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/etc/microserver/registry
+ExecStartPre=/usr/bin/docker-compose --project-name microserver-registry --file compose.yaml config --quiet
+ExecStart=/usr/bin/docker-compose --project-name microserver-registry --file compose.yaml up --detach
+ExecReload=/usr/bin/docker-compose --project-name microserver-registry --file compose.yaml up --detach --force-recreate
+ExecStop=/usr/bin/docker-compose --project-name microserver-registry --file compose.yaml stop
+TimeoutStartSec=600
+TimeoutStopSec=90
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+---
+# Shared by the k8s-storage and registry components: never import or create a
+# pool; act only on the owner-reviewed, healthy pool.
+- name: Require the reviewed pool identity
+  ansible.builtin.assert:
+    that:
+      - microserver_pool_name is match('^[a-z][a-z0-9_-]{0,30}$')
+      - microserver_pool_guid | string is match('^[1-9][0-9]{7,19}$')
+    fail_msg: Supply the existing owner-reviewed ZFS pool name and GUID.
+
+- name: Read the existing pool GUID and health
+  ansible.builtin.command:
+    argv: [zpool, get, -H, -o, value, 'guid,health', '{{ microserver_pool_name }}']
+  register: microserver_component_pool
+  changed_when: false
+  check_mode: false
+
+- name: Require the exact healthy owner-selected pool
+  ansible.builtin.assert:
+    that:
+      - microserver_component_pool.stdout_lines == [microserver_pool_guid | string, 'ONLINE']
+    fail_msg: Pool GUID or health differs from the reviewed configuration; no storage changes were made.
