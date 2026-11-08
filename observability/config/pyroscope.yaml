@@ -31,6 +31,10 @@ overrides_exporter:
   ring:
     kvstore: {store: inmemory}
     instance_addr: 127.0.0.1
+# Both client addresses default to localhost:9095, which is Loki's gRPC port
+# here; queries sent there fail with an unknown QueryBackendService.
+query_backend:
+  address: 127.0.0.1:9097
 metastore:
   address: 127.0.0.1:9097
   raft:
