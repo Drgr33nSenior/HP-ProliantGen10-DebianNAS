@@ -1660,6 +1660,131 @@
       }
     },
     {
+      "id": 30,
+      "title": "GPU compute activity by pod \u00b7 AMD exporter",
+      "type": "timeseries",
+      "description": "Busiest card's compute activity for each pod holding GPUs. Attributed by AMD's device metrics exporter through the kubelet pod-resources API, so only pods that requested amd.com/gpu appear.",
+      "gridPos": {
+        "x": 0,
+        "y": 77,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (namespace, pod) (gpu_gfx_activity{job=\"amd-gpu\",pod!=\"\"})",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "No pod holds a GPU",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "title": "VRAM used by pod \u00b7 AMD exporter",
+      "type": "timeseries",
+      "description": "VRAM in use across the cards each pod holds, in MiB as reported by AMD-SMI. Attributed by AMD's device metrics exporter through the kubelet pod-resources API, so only pods that requested amd.com/gpu appear.",
+      "gridPos": {
+        "x": 12,
+        "y": 77,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (namespace, pod) (gpu_used_vram{job=\"amd-gpu\",pod!=\"\"})",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes",
+          "noValue": "No pod holds a GPU",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 93,
       "type": "row",
       "title": "AI stack builds",
@@ -1667,7 +1792,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 77,
+        "y": 84,
         "w": 24,
         "h": 1
       }
@@ -1679,7 +1804,7 @@
       "description": "Current state of each AI-stack pipeline stage: building, or the result of its last run.",
       "gridPos": {
         "x": 0,
-        "y": 78,
+        "y": 85,
         "w": 8,
         "h": 6
       },
@@ -1750,7 +1875,7 @@
       "description": "Wall-clock duration of each stage's most recent run.",
       "gridPos": {
         "x": 8,
-        "y": 78,
+        "y": 85,
         "w": 8,
         "h": 6
       },
@@ -1810,7 +1935,7 @@
       "description": "Share of compilations served from ccache in each stage's last run. A low ratio after a small upstream change means the cache is not being reused.",
       "gridPos": {
         "x": 16,
-        "y": 78,
+        "y": 85,
         "w": 8,
         "h": 6
       },
