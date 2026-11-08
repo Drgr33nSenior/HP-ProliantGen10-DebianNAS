@@ -11,7 +11,7 @@
           - microserver_environment | default('unmapped') == 'prd'
           - microserver_owner_install | default(false) | bool
           - ansible_play_hosts_all | length == 1
-          - ansible_facts.hostname == 'microserver'
+          - ansible_facts.hostname == 'ig0r'
           - ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '13'
           - ansible_facts.architecture == 'x86_64'
           - microserver_cockpit_enabled | bool

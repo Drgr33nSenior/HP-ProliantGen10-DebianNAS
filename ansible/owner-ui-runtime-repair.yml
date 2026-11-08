@@ -40,7 +40,7 @@
           - microserver_environment | default('unmapped') == 'prd'
           - microserver_owner_install | default(false) | bool
           - ansible_play_hosts_all | length == 1
-          - ansible_facts.hostname == 'microserver'
+          - ansible_facts.hostname == 'ig0r'
           - ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '13'
           - microserver_ui_enabled | bool and microserver_ui_tls_enabled | bool
           - microserver_ui_repair_nginx_sha256 is match('^[a-f0-9]{64}$')

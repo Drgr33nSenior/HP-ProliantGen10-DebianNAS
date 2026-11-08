@@ -14,7 +14,7 @@
           - ansible_facts.distribution == 'Debian'
           - ansible_facts.distribution_major_version == '13'
           - ansible_facts.architecture == 'x86_64'
-          - ansible_facts.hostname == 'microserver'
+          - ansible_facts.hostname == 'ig0r'
           - ansible_play_hosts_all | length == 1
           - microserver_pool_name is match('^[A-Za-z][A-Za-z0-9_.-]{0,63}$')
           - microserver_pool_guid is string and microserver_pool_guid is match('^[0-9]+$')

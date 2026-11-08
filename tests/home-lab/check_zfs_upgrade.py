@@ -70,7 +70,7 @@ class ZfsUpgradeTests(unittest.TestCase):
         with mock.patch('sys.argv', ['helper', 'plan', '--pool', 'nas', '--guid', '123']), \
                 mock.patch.object(upgrade.os, 'geteuid', return_value=0), \
                 mock.patch.object(upgrade.os, 'uname', return_value=SimpleNamespace(release=data['kernel'])), \
-                mock.patch.object(upgrade.socket, 'gethostname', return_value='microserver'), \
+                mock.patch.object(upgrade.socket, 'gethostname', return_value='ig0r'), \
                 mock.patch.object(upgrade, 'inspect_pool', return_value=data['enabled']), \
                 mock.patch.object(upgrade, 'mounts', return_value={}), \
                 mock.patch.object(upgrade, 'nfs_state', return_value='inactive'), \
@@ -126,7 +126,7 @@ class ZfsUpgradeTests(unittest.TestCase):
         play = read_yaml(ROOT / 'ansible/owner-zfs-upgrade.yml')[0]
         context = dict(microserver_environment='prd', microserver_owner_install=True,
                        ansible_play_hosts_all=['nas'], ansible_check_mode=False, microserver_zfs_upgrade_operation='stage',
-                       ansible_facts=dict(hostname='microserver', distribution='Debian', distribution_major_version='13', architecture='x86_64'))
+                       ansible_facts=dict(hostname='ig0r', distribution='Debian', distribution_major_version='13', architecture='x86_64'))
         guard = play['pre_tasks'][0]
         self.assertTrue(assertions(guard, context))
         for changes in (dict(microserver_owner_install=False), dict(microserver_environment='unmapped'),

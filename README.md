@@ -92,6 +92,13 @@ firewall before service setup: named-admin SSH and TCP 2049 only from the chosen
 NFS clients. Do not expose monitoring ports to the LAN or Internet yet.
 The profile does not rewrite the firewall or the NIC configuration.
 
+The NAS's hostname is `ig0r` (`microserver_hostname` in the role defaults). Owner
+plays and NAS-side verifiers refuse to run on any other host. To rename it, change
+that value and the checks together (`tests/home-lab/check_identity.py` enforces
+this), then set the host's name and its `/etc/hosts` entry before the next owner
+play. Service DNS names such as `microserver.lan.thespry.family` are separate
+and do not change.
+
 ## 2. Prepare the private target configuration
 
 Copy [the inventory example](ansible/microserver.inventory.example.ini)

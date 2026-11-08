@@ -12,7 +12,7 @@ domain=$1
 address=$2
 expected_nginx=$3
 [[ $domain =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]*$ && $address =~ ^192\.168\.[0-9]{1,3}\.[0-9]{1,3}$ && $expected_nginx =~ ^[a-f0-9]{64}$ ]] || exit 1
-[[ $(hostname -s) == microserver && $(dpkg --print-architecture) == amd64 ]] || exit 1
+[[ $(hostname -s) == ig0r && $(dpkg --print-architecture) == amd64 ]] || exit 1
 # shellcheck source=/dev/null
 . /etc/os-release
 [[ $ID == debian && $VERSION_ID == 13 ]] || exit 1

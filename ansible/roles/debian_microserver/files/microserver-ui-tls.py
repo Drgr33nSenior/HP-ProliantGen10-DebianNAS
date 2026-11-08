@@ -140,7 +140,7 @@ def main():
     parser.add_argument('operation', choices=['cert', 'nginx', 'probe', 'renew'])
     parser.add_argument('candidate', nargs='?')
     args = parser.parse_args()
-    require(os.geteuid() == 0 and socket.gethostname().split('.')[0] == 'microserver', 'Expected the owner on the commissioned NAS')
+    require(os.geteuid() == 0 and socket.gethostname().split('.')[0] == 'ig0r', 'Expected the owner on the commissioned NAS')
     scope = read_scope()
     if args.operation == 'cert':
         verify_certificate(scope)

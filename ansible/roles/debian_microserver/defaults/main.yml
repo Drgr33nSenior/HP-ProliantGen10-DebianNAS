@@ -1,4 +1,8 @@
 ---
+# The NAS's hostname. Owner plays and NAS-side verifiers refuse to run on any
+# other host; tests/home-lab/check_identity.py keeps every check in step with it.
+# Service DNS names (microserver.lan..., registry.lan...) are separate and unchanged.
+microserver_hostname: ig0r
 microserver_pool_name: nas
 microserver_pool_guid: ''
 microserver_nfs_clients: []

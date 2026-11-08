@@ -140,7 +140,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--zfs', action='store_true', help='Verify the ZFS dashboard, Prometheus datasource and ZFS rules')
     args = parser.parse_args()
-    require(os.geteuid() == 0 and socket.gethostname().split('.')[0] == 'microserver', 'Expected the owner on the commissioned NAS')
+    require(os.geteuid() == 0 and socket.gethostname().split('.')[0] == 'ig0r', 'Expected the owner on the commissioned NAS')
     expected = expected_dashboards(args.zfs)
     info = DATABASE.lstat()
     require(stat.S_ISREG(info.st_mode) and info.st_uid == 472 and not info.st_mode & 0o022,

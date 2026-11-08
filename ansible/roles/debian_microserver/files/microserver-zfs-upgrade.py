@@ -147,7 +147,7 @@ def main():
     parser.add_argument('--pool', required=True)
     parser.add_argument('--guid', required=True)
     args = parser.parse_args()
-    require(os.geteuid() == 0 and socket.gethostname().split('.')[0] == 'microserver', 'Expected owner on the commissioned NAS')
+    require(os.geteuid() == 0 and socket.gethostname().split('.')[0] == 'ig0r', 'Expected owner on the commissioned NAS')
     require(re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,63}', args.pool) and re.fullmatch(r'[0-9]+', args.guid), 'Invalid pool identity')
     os.umask(0o077)
     enabled = inspect_pool(args.pool, args.guid)

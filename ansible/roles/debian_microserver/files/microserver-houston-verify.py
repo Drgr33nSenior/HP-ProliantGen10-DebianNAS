@@ -43,7 +43,7 @@ def wait_for(identity, status):
 
 
 def verify():
-    if socket.gethostname().split('.')[0] != 'microserver':
+    if socket.gethostname().split('.')[0] != 'ig0r':
         raise RuntimeError('unexpected host')
     with urllib.request.urlopen('http://127.0.0.1:5002/ready', timeout=5) as response:
         if response.status != 200:

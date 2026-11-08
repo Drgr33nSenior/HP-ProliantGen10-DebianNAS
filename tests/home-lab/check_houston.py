@@ -158,7 +158,7 @@ class HoustonTests(unittest.TestCase):
         docker = ['docker', '--host', endpoint]
         name = 'microserver-houston-tst-' + uuid.uuid4().hex
         container = subprocess.check_output(docker + ['run', '--detach', '--pull', 'never', '--platform', 'linux/amd64',
-            '--name', name, '--hostname', 'microserver', '--read-only', '--cap-drop', 'ALL',
+            '--name', name, '--hostname', 'ig0r', '--read-only', '--cap-drop', 'ALL',
             '--security-opt', 'no-new-privileges', '--network', 'none', '--memory', '256m', '--pids-limit', '64',
             '--tmpfs', '/run:rw,nosuid,nodev,noexec,size=16m,mode=0755',
             '--tmpfs', '/tmp:rw,nosuid,nodev,noexec,size=16m',

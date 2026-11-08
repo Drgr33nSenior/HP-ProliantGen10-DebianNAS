@@ -225,7 +225,7 @@ class TLSTests(unittest.TestCase):
 
     def test_renewal_refreshes_credentials_and_retries_only_listener_startup(self):
         with mock.patch('sys.argv', ['helper', 'renew']), mock.patch.object(tls.os, 'geteuid', return_value=0), \
-                mock.patch.object(tls.socket, 'gethostname', return_value='microserver'), \
+                mock.patch.object(tls.socket, 'gethostname', return_value='ig0r'), \
                 mock.patch.object(tls, 'read_scope', return_value=self.scope), \
                 mock.patch.object(tls, 'DROPIN') as dropin, mock.patch.object(tls, 'protected'), \
                 mock.patch.object(tls, 'check_nginx'), mock.patch.object(tls, 'run') as run, \
