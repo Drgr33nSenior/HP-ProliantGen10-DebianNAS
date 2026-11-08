@@ -125,7 +125,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**A quick view of the workstation.** Use the links above for detail. Click a GPU bar to focus on that card. “Unavailable” means the sensor or service has not supplied data; an offline serving endpoint does not mean the GPUs are faulty. GPU activity can be blank while cards are runtime-suspended; open **GPUs** for sensor availability."
+        "content": "**A quick view of the workstation.** Use the links above for detail. Click a GPU bar to focus on that card. \u201cUnavailable\u201d means the sensor or service has not supplied data; an offline serving endpoint does not mean the GPUs are faulty. GPU activity can be blank while cards are runtime-suspended; open **GPUs** for sensor availability."
       }
     },
     {
@@ -514,9 +514,9 @@
     },
     {
       "id": 8,
-      "title": "GPU activity · each card",
+      "title": "GPU activity \u00b7 each card",
       "type": "bargauge",
-      "description": "Sampled hardware busy percentage. This is not tensor utilization and may miss short bursts.",
+      "description": "Compute activity per card; click a bar to inspect that card. From AMD's device metrics exporter, which reads each card even while it is runtime-suspended; series are matched to the card's PCI address.",
       "gridPos": {
         "x": 0,
         "y": 7,
@@ -530,7 +530,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "workstation_gpu_busy_percent{job=\"node\"} / 100 and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "expr": "max by (pci_bdf) (label_replace(gpu_gfx_activity{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\")) / 100",
           "legendFormat": "{{pci_bdf}}",
           "range": false,
           "instant": true
@@ -539,7 +539,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
-          "noValue": "Unavailable",
+          "noValue": "Exporter unavailable",
           "color": {
             "mode": "palette-classic"
           },
@@ -582,7 +582,7 @@
     },
     {
       "id": 9,
-      "title": "VRAM occupied · each card",
+      "title": "VRAM occupied \u00b7 each card",
       "type": "bargauge",
       "description": "Each GPU has its own allocation domain. This is physical VRAM use, not the SGLang KV-pool ratio.",
       "gridPos": {

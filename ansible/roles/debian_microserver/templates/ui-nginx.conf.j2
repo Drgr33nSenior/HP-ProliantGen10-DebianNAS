@@ -137,6 +137,19 @@ http {
             proxy_pass http://127.0.0.1:{{ port }}/metrics;
         }
 {% endfor %}
+{% if microserver_telemetry_profiles_enabled | bool %}
+        # BEGIN workstation profiles
+        location = /push.v1.PusherService/Push {
+            limit_except POST { deny all; }
+            proxy_http_version 1.1;
+            proxy_pass http://127.0.0.1:4040/push.v1.PusherService/Push;
+        }
+        location = /metrics/pyroscope {
+            limit_except GET { deny all; }
+            proxy_pass http://127.0.0.1:4040/metrics;
+        }
+        # END workstation profiles
+{% endif %}
         location / { return 404; }
     }
     # END workstation ingestion

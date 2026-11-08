@@ -56,3 +56,171 @@ tests:
             exp_annotations:
               summary: 'Host available RAM below 10%; no swap baseline'
               description: 'Inspect AI/build overlap and pod memory; do not remove the host reserve.'
+  - name: A failed AI-stack stage alerts; a successful one does not
+    interval: 1m
+    input_series:
+    - series: workstation_ai_stack_stage_last_result{job="node",instance="threadripper-ai",stage="rocm"}
+      values: '0x10'
+    - series: workstation_ai_stack_stage_last_result{job="node",instance="threadripper-ai",stage="torch"}
+      values: 1x10
+    alert_rule_test:
+    - eval_time: 3m
+      alertname: WorkstationAIStackStageFailed
+      exp_alerts:
+      - exp_labels:
+          job: node
+          instance: threadripper-ai
+          stage: rocm
+          severity: warning
+        exp_annotations:
+          summary: The last AI-stack build of a stage failed
+          description: Read the stage build.log under ~/ai-stack/builds; the previous image remains the rollback.
+  - name: Only a still-running stage older than 12 hours is stuck
+    interval: 1m
+    # promtool evaluates time() from 0, so a start 50,000 s before it is
+    # already older than the 43,200 s (12 h) threshold.
+    input_series:
+    - series: workstation_ai_stack_stage_started_timestamp_seconds{job="node",instance="threadripper-ai",stage="rocm"}
+      values: '-50000+0x10'
+    - series: workstation_ai_stack_stage_running{job="node",instance="threadripper-ai",stage="rocm"}
+      values: 1x10
+    - series: workstation_ai_stack_stage_started_timestamp_seconds{job="node",instance="threadripper-ai",stage="torch"}
+      values: '-50000+0x10'
+    - series: workstation_ai_stack_stage_running{job="node",instance="threadripper-ai",stage="torch"}
+      values: '0x10'
+    alert_rule_test:
+    - eval_time: 8m
+      alertname: WorkstationAIStackStageStuck
+      exp_alerts:
+      - exp_labels:
+          job: node
+          instance: threadripper-ai
+          stage: rocm
+          severity: warning
+        exp_annotations:
+          summary: An AI-stack build stage has run for more than 12 hours
+          description: Check the ai-stack-build user unit for a hang or memory thrash before restarting it.
+  - name: Sustained KV pool saturation alerts per model
+    interval: 1m
+    input_series:
+    - series: sglang:token_usage{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="m"}
+      values: 0.97x20
+    - series: sglang:token_usage{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="n"}
+      values: 0.5x20
+    alert_rule_test:
+    - eval_time: 5m
+      alertname: WorkstationServingKVPoolSaturated
+      exp_alerts: []
+    - eval_time: 15m
+      alertname: WorkstationServingKVPoolSaturated
+      exp_alerts:
+      - exp_labels:
+          model_name: m
+          severity: warning
+        exp_annotations:
+          summary: SGLang KV token pool above 95% for 10 minutes
+          description: Requests will be retracted or queued; lower concurrency or context, or resize the pool.
+  - name: Retractions alert; a quiet model does not
+    interval: 1m
+    input_series:
+    - series: sglang:num_retracted_requests_total{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="m"}
+      values: 0+1x20
+    - series: sglang:num_retracted_requests_total{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="n"}
+      values: 0+0x20
+    alert_rule_test:
+    - eval_time: 10m
+      alertname: WorkstationServingRetracting
+      exp_alerts:
+      - exp_labels:
+          model_name: m
+          severity: warning
+        exp_annotations:
+          summary: SGLang is retracting requests because the KV pool ran out
+          description: Retractions add latency and repeat prefill; compare with KV pool usage and admission limits.
+  - name: Low speculative acceptance alerts only while generating
+    interval: 1m
+    input_series:
+    - series: sglang:spec_accept_length{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="m"}
+      values: 1.5x40
+    - series: sglang:generation_tokens_total{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="m"}
+      values: 0+100x40
+    - series: sglang:spec_accept_length{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="idle"}
+      values: 1.5x40
+    - series: sglang:generation_tokens_total{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="idle"}
+      values: 0+0x40
+    - series: sglang:spec_accept_length{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="good"}
+      values: 3x40
+    - series: sglang:generation_tokens_total{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="good"}
+      values: 0+100x40
+    alert_rule_test:
+    - eval_time: 30m
+      alertname: WorkstationServingSpeculativeAcceptanceLow
+      exp_alerts:
+      - exp_labels:
+          model_name: m
+          severity: warning
+        exp_annotations:
+          summary: Speculative decoding accepts fewer than 2 tokens per step under load
+          description: The draft model is predicting the target poorly; check the draft revision and serving settings.
+  - name: Slow p95 time to first token alerts; a fast model does not
+    interval: 1m
+    input_series:
+    - series: sglang:time_to_first_token_seconds_bucket{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="m",le="10"}
+      values: 0+0x40
+    - series: sglang:time_to_first_token_seconds_bucket{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="m",le="30"}
+      values: 0+10x40
+    - series: sglang:time_to_first_token_seconds_bucket{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="m",le="+Inf"}
+      values: 0+10x40
+    - series: sglang:time_to_first_token_seconds_bucket{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="n",le="10"}
+      values: 0+10x40
+    - series: sglang:time_to_first_token_seconds_bucket{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="n",le="30"}
+      values: 0+10x40
+    - series: sglang:time_to_first_token_seconds_bucket{job="sglang",instance="sglang.ai-home-lab.svc:30000",model_name="n",le="+Inf"}
+      values: 0+10x40
+    alert_rule_test:
+    - eval_time: 30m
+      alertname: WorkstationServingTimeToFirstTokenSlow
+      exp_alerts:
+      - exp_labels:
+          model_name: m
+          severity: warning
+        exp_annotations:
+          summary: SGLang p95 time to first token above 20 seconds
+          description: Compare queue time with prefill; long-context prompts alone can exceed this.
+  - name: An unavailable gateway alerts; a ready one does not
+    interval: 1m
+    input_series:
+    - series: workstation_service_phase{job="gateway",instance="litellm.ai-home-lab.svc:4000",phase="unavailable"}
+      values: 1x10
+    - series: workstation_service_phase{job="gateway",instance="litellm.ai-home-lab.svc:4000",phase="ready"}
+      values: '0x10'
+    alert_rule_test:
+    - eval_time: 3m
+      alertname: WorkstationGatewayUnavailable
+      exp_alerts: []
+    - eval_time: 7m
+      alertname: WorkstationGatewayUnavailable
+      exp_alerts:
+      - exp_labels:
+          job: gateway
+          instance: litellm.ai-home-lab.svc:4000
+          phase: unavailable
+          severity: warning
+        exp_annotations:
+          summary: The model gateway reports itself unavailable
+          description: Inspect the gateway boundary status and its SGLang upstream before clients retry.
+  - name: The host-wide eBPF collector is an expected telemetry target
+    interval: 1m
+    input_series:
+    - series: up{job="alloy-ebpf",instance="threadripper-ai"}
+      values: '0x10'
+    alert_rule_test:
+    - eval_time: 7m
+      alertname: WorkstationExporterDown
+      exp_alerts:
+      - exp_labels:
+          job: alloy-ebpf
+          instance: threadripper-ai
+          severity: warning
+        exp_annotations:
+          summary: An expected workstation telemetry target is unavailable

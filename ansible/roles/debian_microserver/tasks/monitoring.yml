@@ -36,6 +36,21 @@
       - not microserver_telemetry_enabled | bool or (microserver_existing_tempo.stat.exists and microserver_existing_tempo.stat.isreg | default(false) and not microserver_existing_tempo.stat.islnk | default(false) and microserver_existing_tempo.stat.uid == 0)
     fail_msg: Commission the receiver with owner-telemetry.yml first and retain its telemetry variables for later full applies.
 
+- name: Inspect a prior profiles backend before rendering
+  ansible.builtin.stat:
+    path: /etc/microserver/monitoring/pyroscope.yaml
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_existing_pyroscope
+
+- name: Preserve an installed profiles backend and its receiver routes
+  ansible.builtin.assert:
+    that:
+      - not microserver_existing_pyroscope.stat.exists or microserver_telemetry_profiles_enabled | bool
+      - not microserver_telemetry_profiles_enabled | bool or microserver_telemetry_enabled | bool
+    fail_msg: Retain microserver_telemetry_profiles_enabled with the receiver variables so this apply cannot remove Pyroscope.
+
 - name: Validate the retained exact workstation source before a full render
   ansible.builtin.assert:
     that:

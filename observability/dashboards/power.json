@@ -311,9 +311,9 @@
     },
     {
       "id": 6,
-      "title": "GPU board power · compare cards",
+      "title": "GPU package power \u00b7 compare cards",
       "type": "timeseries",
-      "description": "Per-card board readings. They exclude CPU, drives and PSU conversion losses.",
+      "description": "Average package power per card, alongside the PSU readings above. From AMD's device metrics exporter, which reads each card even while it is runtime-suspended; series are matched to the card's PCI address.",
       "gridPos": {
         "x": 0,
         "y": 17,
@@ -327,7 +327,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "workstation_gpu_power_average_watts{job=\"node\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "expr": "max by (pci_bdf) (label_replace(gpu_average_package_power{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
           "legendFormat": "{{pci_bdf}}",
           "range": true,
           "instant": false
@@ -336,7 +336,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "watt",
-          "noValue": "Unavailable",
+          "noValue": "Exporter unavailable",
           "color": {
             "mode": "palette-classic"
           },
@@ -372,9 +372,9 @@
     },
     {
       "id": 7,
-      "title": "GPU temperature channels",
+      "title": "GPU junction temperature \u00b7 compare cards",
       "type": "timeseries",
-      "description": "Native hwmon labels identify edge, junction and memory channels per PCI address. No unsupported device temperature limit is inferred.",
+      "description": "Hottest on-die point per card; compare with power above. From AMD's device metrics exporter, which reads each card even while it is runtime-suspended; series are matched to the card's PCI address.",
       "gridPos": {
         "x": 12,
         "y": 17,
@@ -388,8 +388,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(node_hwmon_temp_celsius{job=\"node\"} * on(job,instance,chip) group_left(chip_name) node_hwmon_chip_names{job=\"node\",chip_name=\"amdgpu\"} * on(job,instance,chip,sensor) group_left(label) node_hwmon_sensor_label{job=\"node\"}, \"pci_bdf\", \"$1.$2\", \"chip\", \".*_(0000:[0-9a-f]{2}:[0-9a-f]{2})_([0-7])\") and on(job,instance,pci_bdf) workstation_gpu_info{job=\"node\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}} · {{label}}",
+          "expr": "max by (pci_bdf) (label_replace(gpu_junction_temperature{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
+          "legendFormat": "{{pci_bdf}}",
           "range": true,
           "instant": false
         }
@@ -397,7 +397,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "celsius",
-          "noValue": "Unavailable",
+          "noValue": "Exporter unavailable",
           "color": {
             "mode": "palette-classic"
           },
@@ -643,7 +643,7 @@
     },
     {
       "id": 202,
-      "title": "Electricity unit rate · incl VAT",
+      "title": "Electricity unit rate \u00b7 incl VAT",
       "type": "stat",
       "description": "The currently selected live, cached or manually supplied unit price. VAT-inclusive public API prices are used without adding VAT again.",
       "gridPos": {
@@ -660,7 +660,7 @@
         {
           "refId": "A",
           "expr": "(workstation_tariff_unit_price_gbp_per_kwh{job=\"node\"} and on(job,instance) (time() < workstation_tariff_valid_until_seconds{job=\"node\"}) and on(job,instance) (workstation_tariff_sample_timestamp_seconds{job=\"node\"} - time() <= 10)) * 100",
-          "legendFormat": "Electricity unit rate · incl VAT",
+          "legendFormat": "Electricity unit rate \u00b7 incl VAT",
           "range": false,
           "instant": true
         }
@@ -693,7 +693,7 @@
     },
     {
       "id": 203,
-      "title": "Household standing charge · incl VAT",
+      "title": "Household standing charge \u00b7 incl VAT",
       "type": "stat",
       "description": "Whole electricity supply charge, due independently of workstation operation. It is deliberately separate from usage-cost panels.",
       "gridPos": {
@@ -710,7 +710,7 @@
         {
           "refId": "A",
           "expr": "(workstation_tariff_standing_charge_gbp_per_day{job=\"node\"} and on(job,instance) (time() < workstation_tariff_valid_until_seconds{job=\"node\"}) and on(job,instance) (workstation_tariff_sample_timestamp_seconds{job=\"node\"} - time() <= 10)) * 100",
-          "legendFormat": "Household standing charge · incl VAT",
+          "legendFormat": "Household standing charge \u00b7 incl VAT",
           "range": false,
           "instant": true
         }
@@ -812,7 +812,7 @@
     },
     {
       "id": 205,
-      "title": "Current energy cost rate · DC proxy",
+      "title": "Current energy cost rate \u00b7 DC proxy",
       "type": "stat",
       "description": "GBP per hour at the current observed PSU DC watts and unit price. Excludes PSU conversion losses and the household standing charge.",
       "gridPos": {
@@ -829,14 +829,14 @@
         {
           "refId": "A",
           "expr": "((workstation_psu_output_power_watts{job=\"node\"} and on(job,instance) (workstation_psu_available{job=\"node\"} == 1) and on(job,instance) (time() - workstation_psu_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_psu_sample_timestamp_seconds{job=\"node\"} - time() <= 10)) / 1000) * on(job,instance) (workstation_tariff_unit_price_gbp_per_kwh{job=\"node\"} and on(job,instance) (time() < workstation_tariff_valid_until_seconds{job=\"node\"}) and on(job,instance) (workstation_tariff_sample_timestamp_seconds{job=\"node\"} - time() <= 10))",
-          "legendFormat": "Current energy cost rate · DC proxy",
+          "legendFormat": "Current energy cost rate \u00b7 DC proxy",
           "range": false,
           "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix:£/h",
+          "unit": "suffix:\u00a3/h",
           "noValue": "Unavailable",
           "decimals": 4,
           "color": {
@@ -862,7 +862,7 @@
     },
     {
       "id": 206,
-      "title": "24 hours at current load · DC proxy",
+      "title": "24 hours at current load \u00b7 DC proxy",
       "type": "stat",
       "description": "A constant-load 24-hour projection, not observed daily expenditure or a forecast. Excludes standing charge and PSU losses.",
       "gridPos": {
@@ -879,7 +879,7 @@
         {
           "refId": "A",
           "expr": "(((workstation_psu_output_power_watts{job=\"node\"} and on(job,instance) (workstation_psu_available{job=\"node\"} == 1) and on(job,instance) (time() - workstation_psu_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_psu_sample_timestamp_seconds{job=\"node\"} - time() <= 10)) / 1000) * on(job,instance) (workstation_tariff_unit_price_gbp_per_kwh{job=\"node\"} and on(job,instance) (time() < workstation_tariff_valid_until_seconds{job=\"node\"}) and on(job,instance) (workstation_tariff_sample_timestamp_seconds{job=\"node\"} - time() <= 10))) * 24",
-          "legendFormat": "24 hours at current load · DC proxy",
+          "legendFormat": "24 hours at current load \u00b7 DC proxy",
           "range": false,
           "instant": true
         }
@@ -912,7 +912,7 @@
     },
     {
       "id": 207,
-      "title": "Selected-window energy · priced now",
+      "title": "Selected-window energy \u00b7 priced now",
       "type": "stat",
       "description": "Difference of measured cumulative DC energy counters near both selected-window edges, priced at the current rate. No increase/extrapolation. Missing boundaries or an observed counter reset refuse a value. Tariff changes revalue this estimate; it is not historic billed cost.",
       "gridPos": {
@@ -929,7 +929,7 @@
         {
           "refId": "A",
           "expr": "((((workstation_psu_output_energy_joules_total{job=\"node\"}) - (workstation_psu_output_energy_joules_total{job=\"node\"} offset $__range)) and on(job,instance) (resets(workstation_psu_output_energy_joules_total{job=\"node\"}[$__range]) == 0) and on(job,instance) (workstation_psu_output_energy_joules_total{job=\"node\"} >= (workstation_psu_output_energy_joules_total{job=\"node\"} offset $__range)) and on(job,instance) (workstation_psu_energy_available{job=\"node\"} == 1) and on(job,instance) (time() - workstation_psu_energy_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_psu_energy_sample_timestamp_seconds{job=\"node\"} - time() <= 10) and on(job,instance) (workstation_psu_energy_available{job=\"node\"} offset $__range == 1) and on(job,instance) ((time() - $__range_s) - (workstation_psu_energy_sample_timestamp_seconds{job=\"node\"} offset $__range) <= 90) and on(job,instance) ((workstation_psu_energy_sample_timestamp_seconds{job=\"node\"} offset $__range) - (time() - $__range_s) <= 10)) / 3600000) * on(job,instance) (workstation_tariff_unit_price_gbp_per_kwh{job=\"node\"} and on(job,instance) (time() < workstation_tariff_valid_until_seconds{job=\"node\"}) and on(job,instance) (workstation_tariff_sample_timestamp_seconds{job=\"node\"} - time() <= 10))",
-          "legendFormat": "Selected-window energy · priced now",
+          "legendFormat": "Selected-window energy \u00b7 priced now",
           "range": false,
           "instant": true
         }
@@ -962,7 +962,7 @@
     },
     {
       "id": 208,
-      "title": "Covered sample hours · selected window",
+      "title": "Covered sample hours \u00b7 selected window",
       "type": "stat",
       "description": "Observed counter difference at the selected edges. Gaps excluded by the existing energy sampler stay excluded; sampling means edges are approximate.",
       "gridPos": {
@@ -979,7 +979,7 @@
         {
           "refId": "A",
           "expr": "(((workstation_psu_energy_covered_seconds_total{job=\"node\"}) - (workstation_psu_energy_covered_seconds_total{job=\"node\"} offset $__range)) and on(job,instance) (resets(workstation_psu_energy_covered_seconds_total{job=\"node\"}[$__range]) == 0) and on(job,instance) (workstation_psu_energy_covered_seconds_total{job=\"node\"} >= (workstation_psu_energy_covered_seconds_total{job=\"node\"} offset $__range)) and on(job,instance) (workstation_psu_energy_available{job=\"node\"} == 1) and on(job,instance) (time() - workstation_psu_energy_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_psu_energy_sample_timestamp_seconds{job=\"node\"} - time() <= 10) and on(job,instance) (workstation_psu_energy_available{job=\"node\"} offset $__range == 1) and on(job,instance) ((time() - $__range_s) - (workstation_psu_energy_sample_timestamp_seconds{job=\"node\"} offset $__range) <= 90) and on(job,instance) ((workstation_psu_energy_sample_timestamp_seconds{job=\"node\"} offset $__range) - (time() - $__range_s) <= 10)) / 3600",
-          "legendFormat": "Covered sample hours · selected window",
+          "legendFormat": "Covered sample hours \u00b7 selected window",
           "range": false,
           "instant": true
         }
@@ -1127,7 +1127,7 @@
     },
     {
       "id": 211,
-      "title": "Energy cost rate over time · DC proxy",
+      "title": "Energy cost rate over time \u00b7 DC proxy",
       "type": "timeseries",
       "description": "Each point uses the tariff observed at that time and fresh PSU DC output. This is an hourly cost rate, not an accumulated bill. Missing tariff or power observations remain gaps.",
       "gridPos": {
@@ -1144,14 +1144,14 @@
         {
           "refId": "A",
           "expr": "((workstation_psu_output_power_watts{job=\"node\"} and on(job,instance) (workstation_psu_available{job=\"node\"} == 1) and on(job,instance) (time() - workstation_psu_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_psu_sample_timestamp_seconds{job=\"node\"} - time() <= 10)) / 1000) * on(job,instance) (workstation_tariff_unit_price_gbp_per_kwh{job=\"node\"} and on(job,instance) (time() < workstation_tariff_valid_until_seconds{job=\"node\"}) and on(job,instance) (workstation_tariff_sample_timestamp_seconds{job=\"node\"} - time() <= 10))",
-          "legendFormat": "GBP per hour · PSU DC",
+          "legendFormat": "GBP per hour \u00b7 PSU DC",
           "range": true,
           "instant": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "suffix:£/h",
+          "unit": "suffix:\u00a3/h",
           "noValue": "Unavailable",
           "color": {
             "mode": "palette-classic"

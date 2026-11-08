@@ -1,0 +1,54 @@
+# Single-process Pyroscope 2 with v2 storage; every listener stays on NAS
+# loopback. Rings run in memory and advertise 127.0.0.1, so internal gRPC never
+# uses a LAN address. Loki uses gRPC 9095 and Tempo 9096, hence 9097 here.
+target: all
+architecture_storage: v2
+multitenancy_enabled: false
+server:
+  http_listen_address: 127.0.0.1
+  http_listen_port: 4040
+  grpc_listen_address: 127.0.0.1
+  grpc_listen_port: 9097
+  log_level: warn
+memberlist:
+  bind_addr: [127.0.0.1]
+  bind_port: 7947
+  advertise_addr: 127.0.0.1
+  advertise_port: 7947
+distributor:
+  ring:
+    kvstore: {store: inmemory}
+    instance_addr: 127.0.0.1
+segment_writer:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore: {store: inmemory}
+      replication_factor: 1
+frontend:
+  instance_addr: 127.0.0.1
+overrides_exporter:
+  ring:
+    kvstore: {store: inmemory}
+    instance_addr: 127.0.0.1
+metastore:
+  address: 127.0.0.1:9097
+  raft:
+    dir: /data/v2/metastore/raft
+    bind_address: 127.0.0.1:9099
+    advertise_address: 127.0.0.1:9099
+  data_dir: /data/v2/metastore/data
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/v2/shared
+limits:
+  # One workstation's eBPF profiles; refuse bursts instead of exhausting the NAS.
+  ingestion_rate_mb: 1
+  ingestion_burst_size_mb: 2
+  retention_period: 72h
+  max_query_lookback: 72h
+self_profiling:
+  disable_push: true
+analytics:
+  reporting_enabled: false

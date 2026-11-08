@@ -15,6 +15,12 @@ DIRECTORY = Path('/etc/microserver/monitoring/dashboard-folders/Infrastructure')
 DATABASE = Path('/var/lib/microserver/grafana/grafana.db')
 SOURCES = {'prometheus': ('prometheus', 'http://127.0.0.1:9090'),
            'loki': ('loki', 'http://127.0.0.1:3100'), 'tempo': ('tempo', 'http://127.0.0.1:3200')}
+PROFILES_SOURCE = {'pyroscope': ('grafana-pyroscope-datasource', 'http://127.0.0.1:4040')}
+# The telemetry component installs this only with the optional profiles backend.
+PROFILES_PROVISIONING = Path('/etc/microserver/monitoring/provisioning/datasources/pyroscope.yaml')
+# Must equal the rule count in observability/config/workstation-alerts.yaml; a
+# repository test enforces this so the verifier cannot drift from the source.
+WORKSTATION_RULE_COUNT = 23
 VIEW = 'workstation_dashboard_metadata'
 # Grafana 13 stores provisioned dashboards in resource, not the legacy dashboard
 # table. Extract these public fields inside SQLite; never return resource.value.
@@ -95,10 +101,10 @@ def verify_rule_group(payload):
     groups = payload.get('data', {}).get('groups', [])
     selected = [group for group in groups if group['name'] == 'workstation' and
                 group['file'] == '/etc/prometheus/workstation-alerts.yaml']
-    require(len(selected) == 1 and len(selected[0]['rules']) == 16, 'Expected all 16 workstation rules')
+    require(len(selected) == 1 and len(selected[0]['rules']) == WORKSTATION_RULE_COUNT, 'Expected every workstation rule')
     group = selected[0]
     names = {rule['name'] for rule in group['rules']}
-    require(len(names) == 16 and {'WorkstationHostTelemetryMissing', 'WorkstationHostAlloyHeartbeatMissing',
+    require(len(names) == WORKSTATION_RULE_COUNT and {'WorkstationHostTelemetryMissing', 'WorkstationHostAlloyHeartbeatMissing',
                                 'workstation:memory_available_ratio', 'workstation:memory_pressure_ratio:rate5m'} <= names,
             'Required workstation rule identities are missing')
     require(all(rule.get('health') == 'ok' and not rule.get('lastError') for rule in group['rules']),
@@ -141,7 +147,8 @@ def main():
             'Grafana database type or ownership differs')
     connection = sqlite3.connect(DATABASE.as_uri() + '?mode=ro', uri=True, timeout=5)
     try:
-        verify_catalog(connection, expected, {'prometheus': SOURCES['prometheus']} if args.zfs else SOURCES)
+        sources = {'prometheus': SOURCES['prometheus']} if args.zfs else dict(SOURCES, **(PROFILES_SOURCE if PROFILES_PROVISIONING.exists() else {}))
+        verify_catalog(connection, expected, sources)
     finally:
         connection.close()
     client = HTTPConnection('127.0.0.1', 9090, timeout=8)
@@ -157,8 +164,9 @@ def main():
         print('GRAFANA_ZFS_METADATA=dashboard and loopback Prometheus datasource verified; credential columns excluded')
         print('ZFS_RULES=7 loaded and evaluated; FIRING_ALERT_COUNT=' + str(firing))
     else:
-        print('GRAFANA_METADATA=8 workstation dashboards and 3 loopback datasources verified; credential columns excluded')
-        print('WORKSTATION_RULES=16 loaded and evaluated; FIRING_ALERT_COUNT=' + str(firing))
+        print('GRAFANA_METADATA=8 workstation dashboards and ' + str(len(sources)) +
+              ' loopback datasources verified; credential columns excluded')
+        print('WORKSTATION_RULES=' + str(WORKSTATION_RULE_COUNT) + ' loaded and evaluated; FIRING_ALERT_COUNT=' + str(firing))
 
 
 if __name__ == '__main__':

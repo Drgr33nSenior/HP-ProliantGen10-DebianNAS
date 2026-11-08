@@ -60,6 +60,8 @@ receiver allowlist to untrusted networks.
 | `/metrics/loki` | GET | Loki self metrics |
 | `/metrics/tempo` | GET | Tempo self metrics |
 | `/metrics/grafana` | GET | Grafana self metrics |
+| `/push.v1.PusherService/Push` | POST | Pyroscope profile push (profiles option only) |
+| `/metrics/pyroscope` | GET | Pyroscope self metrics (profiles option only) |
 
 Other paths return HTTP 404. Disallowed methods on these routes return HTTP 403.
 The four metrics routes let workstation Alloy retain its existing dashboard job
@@ -72,6 +74,32 @@ space and measured use before increasing ingestion or retention. The local
 fixture verified trace readback; this Tempo version also logged idle scheduler
 messages about missing jobs. Check live errors and trace readback during
 qualification instead of treating readiness alone as proof of trace storage.
+
+## Optional profiles backend
+
+The receiver can also store continuous profiles from the workstation's
+host-wide eBPF collector in a pinned Pyroscope 2.4.3 service, with a Pyroscope
+datasource in Grafana. Enable it on a commissioned receiver by keeping the
+telemetry variables and adding:
+
+```yaml
+microserver_telemetry_profiles_enabled: true
+```
+
+Then rerun the same `ansible/owner-telemetry.yml` command. The component checks
+that ports 4040, 9097, 9099 and 7947 are free, fetches only the pinned image,
+installs `observability/config/pyroscope.yaml` and the datasource, starts only
+Pyroscope, recreates Grafana and adds the two profile routes. Every Pyroscope
+listener stays on loopback, and its rings advertise 127.0.0.1. Pyroscope uses at
+most 768 MiB RAM and 0.25 CPU, keeps profiles for 72 hours under
+`/var/lib/microserver/pyroscope`, and accepts 1 MB/s (2 MB burst). Pyroscope has
+no configuration check command, so confirm `http://127.0.0.1:4040/ready` and a
+profile query in Grafana after the first apply.
+
+Once installed, keep the flag for later full, monitoring and UI applies; they
+refuse to render without it rather than drop the service or routes. The
+workstation verifier requires the Pyroscope datasource whenever its
+provisioning file is present.
 
 ## Qualify and cut over
 
@@ -111,7 +139,7 @@ ansible-playbook -i /path/to/private/inventory.ini --limit nas \
   ansible/owner-workstation.yml
 ```
 
-The component adds 16 workstation recording and alert rules. Host queries use
+The component adds 23 workstation recording and alert rules, including build-pipeline, serving and gateway alerts. Host queries use
 `job="node"`; NAS host metrics use `job="microserver-node"`. This separation
 lets a missing workstation trigger its availability alert even while the NAS
 continues reporting healthy memory metrics. Rule evaluation failures are
@@ -122,8 +150,10 @@ read-only Prometheus bind mount. Existing services and other Prometheus settings
 must match the reviewed source. The component recreates only NAS Prometheus,
 retaining its database. Collectors can buffer samples during the brief restart.
 
-The eight existing workstation dashboards retain their UIDs. Their installed
-files must match the canonical sources; drift causes refusal. Verification uses
+The eight workstation dashboards retain their UIDs. This component installs
+them from `observability/dashboards/`, keeping a backup of any file it
+replaces, so a dashboard change needs only this component, not a full apply.
+Installed files must be regular root-owned `0644` files. Verification uses
 a read-only Grafana SQLite connection to select active dashboard UID/title
 and datasource UID/type/URL metadata for the expected objects. Grafana 13 uses
 its unified `resource` store for dashboards; its legacy `dashboard` table can
