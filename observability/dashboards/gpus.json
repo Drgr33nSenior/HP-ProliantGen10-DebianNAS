@@ -153,7 +153,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Power, temperature, activity and clocks come from AMD's device metrics exporter, which keeps reading a card while it is runtime-suspended (idle). VRAM capacity, PCIe width and identity come from the workstation's sysfs sampler, whose activity and clock channels are unreadable while a card is runtime-suspended; the availability panel shows that, and it is not a fault. A card driving a monitor stays awake and draws more idle power."
+        "content": "Power, temperature, activity and clocks come from AMD's device metrics exporter, which keeps reading a card while it is runtime-suspended (idle). VRAM capacity, PCIe width and identity come from the workstation's sysfs sampler, whose activity and clock channels are unreadable while a card is runtime-suspended; the availability panel shows that, and it is not a fault. The PCI runtime power state is not a power reading: an idle card in D0 can draw as little as a suspended one, while a card driving a monitor draws more."
       }
     },
     {
@@ -219,9 +219,9 @@
     },
     {
       "id": 12,
-      "title": "Runtime power state",
+      "title": "PCI runtime power state",
       "type": "stat",
-      "description": "Kernel runtime power management state per card. Until the updated sampler reports it directly, a card whose activity sensor is unreadable is shown as suspended.",
+      "description": "The kernel's runtime power-management state per card: Active means the card is in PCI D0, Suspended means D3. It is not a power reading. An idle card in D0 can still draw about 1 W, because the driver gates its engines internally; use Package power for actual draw. A card driving a monitor stays in D0 and draws more. Until the updated sampler reports this directly, a card whose activity sensor is unreadable is shown as suspended.",
       "gridPos": {
         "x": 12,
         "y": 4,
@@ -250,11 +250,11 @@
               "type": "value",
               "options": {
                 "0": {
-                  "text": "Active",
-                  "color": "green"
+                  "text": "Active (D0)",
+                  "color": "text"
                 },
                 "1": {
-                  "text": "Suspended (idle)",
+                  "text": "Suspended (D3)",
                   "color": "text"
                 }
               }
