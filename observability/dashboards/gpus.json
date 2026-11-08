@@ -153,7 +153,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Select one PCI address, or **All** to compare both. **GPUs can be runtime-suspended when idle.** In that state, this driver can refuse activity, clock, temperature and power reads while identity and VRAM remain readable. Blank charts are missing readings, not measured zero or evidence of a failed collector.\n\nThe status row below reports activity/clock channel availability; it does not prove the GPU's power state or health. The dashboard does not wake a card or change its power policy."
+        "content": "Power, temperature, activity and clocks come from AMD's device metrics exporter, which keeps reading a card while it is runtime-suspended (idle). VRAM capacity, PCIe width and identity come from the workstation's sysfs sampler, whose activity and clock channels are unreadable while a card is runtime-suspended; the availability panel shows that, and it is not a fault. A card driving a monitor stays awake and draws more idle power."
       }
     },
     {
@@ -221,7 +221,7 @@
       "id": 12,
       "title": "Runtime power state",
       "type": "stat",
-      "description": "Kernel runtime power management state per card, read without waking it. A suspended card refuses activity, clock, temperature and power reads, so those panels stay empty until a workload wakes it. Suspended while idle is normal, not a fault.",
+      "description": "Kernel runtime power management state per card. Until the updated sampler reports it directly, a card whose activity sensor is unreadable is shown as suspended.",
       "gridPos": {
         "x": 12,
         "y": 4,
@@ -238,7 +238,7 @@
           "legendFormat": "{{pci_bdf}}",
           "range": false,
           "instant": true,
-          "expr": "max by (pci_bdf) (workstation_gpu_runtime_suspended{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10))"
+          "expr": "max by (pci_bdf) (workstation_gpu_runtime_suspended{job=\"node\",pci_bdf=~\"${gpu:regex}\"}) or (1 - min by (pci_bdf) (workstation_gpu_sensor_available{job=\"node\",pci_bdf=~\"${gpu:regex}\",sensor=\"busy_percent\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90)))"
         }
       ],
       "fieldConfig": {
@@ -279,10 +279,10 @@
       }
     },
     {
-      "id": 2,
-      "title": "GPU activity",
+      "id": 20,
+      "title": "Package power \u00b7 each card",
       "type": "timeseries",
-      "description": "Thirty-second sampled busy percentage; not matrix-engine occupancy.",
+      "description": "Average package power. From AMD's device metrics exporter, which reads each card even while it is runtime-suspended; series are matched to the card's PCI address.",
       "gridPos": {
         "x": 0,
         "y": 8,
@@ -296,7 +296,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "workstation_gpu_busy_percent{job=\"node\",pci_bdf=~\"${gpu:regex}\"} / 100 and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
+          "expr": "max by (pci_bdf) (label_replace(gpu_average_package_power{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
           "legendFormat": "{{pci_bdf}}",
           "range": true,
           "instant": false
@@ -304,8 +304,70 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "noValue": "Unavailable",
+          "unit": "watt",
+          "noValue": "Exporter unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Junction (hotspot) temperature \u00b7 each card",
+      "type": "timeseries",
+      "description": "Hottest on-die point; the card throttles as this approaches its limit. From AMD's device metrics exporter, which reads each card even while it is runtime-suspended; series are matched to the card's PCI address.",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (pci_bdf) (label_replace(gpu_junction_temperature{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
+          "legendFormat": "{{pci_bdf}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "noValue": "Exporter unavailable",
           "color": {
             "mode": "palette-classic"
           },
@@ -340,13 +402,76 @@
       }
     },
     {
+      "id": 22,
+      "title": "Compute activity \u00b7 each card",
+      "type": "timeseries",
+      "description": "Graphics/compute engine busy share. From AMD's device metrics exporter, which reads each card even while it is runtime-suspended; series are matched to the card's PCI address.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (pci_bdf) (label_replace(gpu_gfx_activity{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
+          "legendFormat": "{{pci_bdf}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "Exporter unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 3,
       "title": "VRAM used and physical capacity",
       "type": "timeseries",
       "description": "Separate capacity per GPU; do not treat two cards as one allocation.",
       "gridPos": {
         "x": 12,
-        "y": 8,
+        "y": 15,
         "w": 12,
         "h": 7
       },
@@ -408,13 +533,13 @@
       }
     },
     {
-      "id": 4,
-      "title": "GPU temperature channels",
+      "id": 23,
+      "title": "Memory and edge temperature \u00b7 each card",
       "type": "timeseries",
-      "description": "Native hwmon labels identify edge, junction and memory channels per PCI address. No unsupported device temperature limit is inferred.",
+      "description": "VRAM (memory) temperature and board edge temperature. From AMD's device metrics exporter, which reads each card even while it is runtime-suspended; series are matched to the card's PCI address.",
       "gridPos": {
         "x": 0,
-        "y": 15,
+        "y": 22,
         "w": 12,
         "h": 7
       },
@@ -425,8 +550,15 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(node_hwmon_temp_celsius{job=\"node\"} * on(job,instance,chip) group_left(chip_name) node_hwmon_chip_names{job=\"node\",chip_name=\"amdgpu\"} * on(job,instance,chip,sensor) group_left(label) node_hwmon_sensor_label{job=\"node\"}, \"pci_bdf\", \"$1.$2\", \"chip\", \".*_(0000:[0-9a-f]{2}:[0-9a-f]{2})_([0-7])\") and on(job,instance,pci_bdf) workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}} \u00b7 {{label}}",
+          "expr": "max by (pci_bdf) (label_replace(gpu_memory_temperature{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
+          "legendFormat": "{{pci_bdf}} memory",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "max by (pci_bdf) (label_replace(gpu_edge_temperature{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
+          "legendFormat": "{{pci_bdf}} edge",
           "range": true,
           "instant": false
         }
@@ -434,7 +566,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "celsius",
-          "noValue": "Unavailable",
+          "noValue": "Exporter unavailable",
           "color": {
             "mode": "palette-classic"
           },
@@ -469,132 +601,10 @@
       }
     },
     {
-      "id": 5,
-      "title": "Reported board power",
+      "id": 24,
+      "title": "Core and memory clock \u00b7 each card",
       "type": "timeseries",
-      "description": "Board sensor average. It excludes the rest of the workstation and is not wall power.",
-      "gridPos": {
-        "x": 12,
-        "y": 15,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "workstation_gpu_power_average_watts{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}}",
-          "range": true,
-          "instant": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "watt",
-          "noValue": "Unavailable",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "spanNulls": false,
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 6,
-      "title": "Selected GPU core clock",
-      "type": "timeseries",
-      "description": "A selected DPM state is not proof of a sustained execution clock. Unavailable states are gaps.",
-      "gridPos": {
-        "x": 0,
-        "y": 22,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "workstation_gpu_core_clock_hertz{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}}",
-          "range": true,
-          "instant": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "hertz",
-          "noValue": "Unavailable",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "spanNulls": false,
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 7,
-      "title": "Selected VRAM clock",
-      "type": "timeseries",
-      "description": "Reported memory DPM clock, not memory bandwidth.",
+      "description": "Current core (system) and memory clocks. From AMD's device metrics exporter, which reads each card even while it is runtime-suspended; series are matched to the card's PCI address.",
       "gridPos": {
         "x": 12,
         "y": 22,
@@ -608,16 +618,23 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "workstation_gpu_memory_clock_hertz{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}}",
+          "expr": "max by (pci_bdf) (label_replace(gpu_clock{job=\"amd-gpu\",clock_type=\"system\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
+          "legendFormat": "{{pci_bdf}} core",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "max by (pci_bdf) (label_replace(gpu_clock{job=\"amd-gpu\",clock_type=\"memory\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
+          "legendFormat": "{{pci_bdf}} memory",
           "range": true,
           "instant": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "hertz",
-          "noValue": "Unavailable",
+          "unit": "MHz",
+          "noValue": "Exporter unavailable",
           "color": {
             "mode": "palette-classic"
           },
@@ -632,7 +649,8 @@
               "mode": "none",
               "group": "A"
             }
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -807,275 +825,6 @@
         "cellHeight": "sm",
         "footer": {
           "show": false
-        }
-      }
-    },
-    {
-      "id": 13,
-      "title": "Package power \u00b7 AMD exporter",
-      "type": "timeseries",
-      "description": "Average package power per card. From AMD's device metrics exporter (job amd-gpu), which reads cards even while they are runtime-suspended. It labels cards by GPU index, so the PCI-address filter above does not apply.",
-      "gridPos": {
-        "x": 0,
-        "y": 39,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "gpu_average_package_power{job=\"amd-gpu\"}",
-          "legendFormat": "GPU {{gpu_id}}",
-          "range": true,
-          "instant": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "watt",
-          "noValue": "Exporter unavailable",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "spanNulls": false,
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          },
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 14,
-      "title": "Edge, junction and memory temperature \u00b7 AMD exporter",
-      "type": "timeseries",
-      "description": "Board temperature channels per card. From AMD's device metrics exporter (job amd-gpu), which reads cards even while they are runtime-suspended. It labels cards by GPU index, so the PCI-address filter above does not apply.",
-      "gridPos": {
-        "x": 12,
-        "y": 39,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "gpu_edge_temperature{job=\"amd-gpu\"}",
-          "legendFormat": "GPU {{gpu_id}} edge",
-          "range": true,
-          "instant": false
-        },
-        {
-          "refId": "B",
-          "expr": "gpu_junction_temperature{job=\"amd-gpu\"}",
-          "legendFormat": "GPU {{gpu_id}} junction",
-          "range": true,
-          "instant": false
-        },
-        {
-          "refId": "C",
-          "expr": "gpu_memory_temperature{job=\"amd-gpu\"}",
-          "legendFormat": "GPU {{gpu_id}} memory",
-          "range": true,
-          "instant": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "celsius",
-          "noValue": "Exporter unavailable",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "spanNulls": false,
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 15,
-      "title": "Compute and memory activity \u00b7 AMD exporter",
-      "type": "timeseries",
-      "description": "Graphics/compute engine and memory controller activity per card. From AMD's device metrics exporter (job amd-gpu), which reads cards even while they are runtime-suspended. It labels cards by GPU index, so the PCI-address filter above does not apply.",
-      "gridPos": {
-        "x": 0,
-        "y": 46,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "gpu_gfx_activity{job=\"amd-gpu\"}",
-          "legendFormat": "GPU {{gpu_id}} compute",
-          "range": true,
-          "instant": false
-        },
-        {
-          "refId": "B",
-          "expr": "gpu_umc_activity{job=\"amd-gpu\"}",
-          "legendFormat": "GPU {{gpu_id}} memory",
-          "range": true,
-          "instant": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "noValue": "Exporter unavailable",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "spanNulls": false,
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          },
-          "min": 0,
-          "max": 100
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 16,
-      "title": "VRAM used \u00b7 AMD exporter",
-      "type": "timeseries",
-      "description": "VRAM in use per card, in MiB as reported by AMD-SMI. From AMD's device metrics exporter (job amd-gpu), which reads cards even while they are runtime-suspended. It labels cards by GPU index, so the PCI-address filter above does not apply.",
-      "gridPos": {
-        "x": 12,
-        "y": 46,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "gpu_used_vram{job=\"amd-gpu\"}",
-          "legendFormat": "GPU {{gpu_id}}",
-          "range": true,
-          "instant": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "decmbytes",
-          "noValue": "Exporter unavailable",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "spanNulls": false,
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          },
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
         }
       }
     }
