@@ -44,6 +44,12 @@
       "version": "3.0.3",
       "image": "docker.io/grafana/tempo:3.0.3@sha256:0296560ac66f8a3600d7fb3014a52c189d4d9c3549ad6ff441bf2409855d68d5",
       "source": "https://github.com/grafana/tempo/releases/tag/v3.0.3"
+    },
+    {
+      "component": "pyroscope",
+      "version": "2.4.3",
+      "image": "docker.io/grafana/pyroscope:2.4.3@sha256:bf667534cd403320573063894e3faba20a5a5d1bfb92eddaecfabeb2446c502b",
+      "source": "https://github.com/grafana/pyroscope/releases/tag/v2.4.3"
     }
   ]
 }

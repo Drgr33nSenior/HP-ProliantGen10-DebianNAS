@@ -430,6 +430,7 @@ class MicroServerTests(unittest.TestCase):
                          "{{ {'address': microserver_ui_address, 'domain': microserver_ui_domain, 'networks': [microserver_ui_address + '/32', microserver_telemetry_client_address + '/32']} | to_json }}"],
                         ['/usr/bin/systemctl', 'is-active', 'microserver-monitoring.service', 'microserver-ui.service'],
                         ['/usr/bin/docker', 'image', 'inspect', '--format', "{{ '{{.Id}}' }}", '{{ microserver_tempo_image }}'],
+                        ['/usr/bin/docker', 'image', 'inspect', '--format', "{{ '{{.Id}}' }}", '{{ microserver_pyroscope_image }}'],
                     ]
                     registry_read = source.name == 'registry.yml' and (
                         task['name'] == 'Require canonical RFC1918 client networks' and argv[:2] == ['/usr/bin/python3', '-c']

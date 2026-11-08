@@ -15,6 +15,8 @@ microserver_ui_domain: ''
 microserver_ui_allowed_networks: []
 microserver_telemetry_enabled: false
 microserver_telemetry_client_address: ''
+# Optional Pyroscope profiles backend behind the same receiver; needs telemetry.
+microserver_telemetry_profiles_enabled: false
 microserver_workstation_rules_enabled: false
 microserver_irqbalance_enabled: true
 microserver_dimm_limits_enabled: false

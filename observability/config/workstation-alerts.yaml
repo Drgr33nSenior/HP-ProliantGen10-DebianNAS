@@ -27,7 +27,7 @@ groups:
           summary: 'XFS free space below 15%'
           description: 'Review model/build/log retention. PVC requested sizes are not filesystem quotas.'
       - alert: WorkstationExporterDown
-        expr: 'up{job=~"node|kube-state-metrics|alloy|workstation-host-alloy|prometheus|loki|tempo|grafana"} == 0'
+        expr: 'up{job=~"node|kube-state-metrics|alloy|alloy-ebpf|workstation-host-alloy|prometheus|loki|tempo|grafana"} == 0'
         for: 5m
         labels: {severity: warning}
         annotations: {summary: 'An expected workstation telemetry target is unavailable'}
@@ -84,3 +84,52 @@ groups:
         for: 5m
         labels: {severity: warning}
         annotations: {summary: 'One physical GPU has less than 2% VRAM headroom; inspect model/KV/workspace allocations'}
+      - alert: WorkstationAIStackStageFailed
+        expr: 'workstation_ai_stack_stage_last_result{job="node"} == 0'
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: 'The last AI-stack build of a stage failed'
+          description: 'Read the stage build.log under ~/ai-stack/builds; the previous image remains the rollback.'
+      - alert: WorkstationAIStackStageStuck
+        expr: '(time() - workstation_ai_stack_stage_started_timestamp_seconds{job="node"} > 43200) and on(job,instance,stage) (workstation_ai_stack_stage_running{job="node"} == 1)'
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'An AI-stack build stage has run for more than 12 hours'
+          description: 'Check the ai-stack-build user unit for a hang or memory thrash before restarting it.'
+      - alert: WorkstationServingKVPoolSaturated
+        expr: 'max by (model_name) (sglang:token_usage{job="sglang"}) > 0.95'
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 'SGLang KV token pool above 95% for 10 minutes'
+          description: 'Requests will be retracted or queued; lower concurrency or context, or resize the pool.'
+      - alert: WorkstationServingRetracting
+        expr: 'sum by (model_name) (increase(sglang:num_retracted_requests_total{job="sglang"}[10m])) > 0'
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'SGLang is retracting requests because the KV pool ran out'
+          description: 'Retractions add latency and repeat prefill; compare with KV pool usage and admission limits.'
+      - alert: WorkstationServingSpeculativeAcceptanceLow
+        expr: '(min by (model_name) (sglang:spec_accept_length{job="sglang"}) < 2) and on(model_name) (sum by (model_name) (rate(sglang:generation_tokens_total{job="sglang"}[10m])) > 0)'
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Speculative decoding accepts fewer than 2 tokens per step under load'
+          description: 'The draft model is predicting the target poorly; check the draft revision and serving settings.'
+      - alert: WorkstationServingTimeToFirstTokenSlow
+        expr: 'histogram_quantile(0.95, sum by (model_name, le) (rate(sglang:time_to_first_token_seconds_bucket{job="sglang"}[10m]))) > 20'
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 'SGLang p95 time to first token above 20 seconds'
+          description: 'Compare queue time with prefill; long-context prompts alone can exceed this.'
+      - alert: WorkstationGatewayUnavailable
+        expr: 'workstation_service_phase{job="gateway",phase="unavailable"} == 1'
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'The model gateway reports itself unavailable'
+          description: 'Inspect the gateway boundary status and its SGLang upstream before clients retry.'

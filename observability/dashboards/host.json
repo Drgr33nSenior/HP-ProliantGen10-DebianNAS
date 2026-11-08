@@ -153,7 +153,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Read **activity**, **pressure** and **headroom** together. Linux cache is reclaimable; RAM available is more useful than “free”. Disk counters include physical and mapped layers: compare devices rather than adding their totals. No network-throughput panel is shown because that collector is disabled in this installation."
+        "content": "Read **activity**, **pressure** and **headroom** together. Linux cache is reclaimable; RAM available is more useful than \u201cfree\u201d. Disk counters include physical and mapped layers: compare devices rather than adding their totals. No network-throughput panel is shown because that collector is disabled in this installation."
       }
     },
     {
@@ -777,7 +777,7 @@
         {
           "refId": "A",
           "expr": "node_hwmon_temp_celsius{job=\"node\"} * on(job,instance,chip) group_left(chip_name) node_hwmon_chip_names{job=\"node\",chip_name=~\"k10temp|nvme\"} * on(job,instance,chip,sensor) group_left(label) node_hwmon_sensor_label{job=\"node\"}",
-          "legendFormat": "{{chip_name}} · {{chip}} · {{label}}",
+          "legendFormat": "{{chip_name}} \u00b7 {{chip}} \u00b7 {{label}}",
           "range": true,
           "instant": false
         }
@@ -821,7 +821,7 @@
     },
     {
       "id": 13,
-      "title": "ECC memory errors · reported totals",
+      "title": "ECC memory errors \u00b7 reported totals",
       "type": "timeseries",
       "description": "Absent EDAC metrics mean unavailable. Counters describe the driver's lifetime, not errors in this time range.",
       "gridPos": {
@@ -889,7 +889,7 @@
     },
     {
       "id": 14,
-      "title": "Reported CPU frequency · range across cores",
+      "title": "Reported CPU frequency \u00b7 range across cores",
       "type": "timeseries",
       "description": "Minimum, mean and maximum current cpufreq readings across logical CPUs. Reported scaling frequency is not proof of sustained instructions per second.",
       "gridPos": {
@@ -961,6 +961,35 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "id": 15,
+      "type": "flamegraph",
+      "title": "CPU profile \u00b7 host processes",
+      "description": "Continuous eBPF CPU profile of every host process (builds, serving, collectors), grouped by executable. Requires TELEMETRY_EBPF and the NAS Pyroscope; select a service in Grafana's Profiles view to drill in.",
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 24,
+        "h": 12
+      },
+      "datasource": {
+        "type": "grafana-pyroscope-datasource",
+        "uid": "pyroscope"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-pyroscope-datasource",
+            "uid": "pyroscope"
+          },
+          "queryType": "profile",
+          "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+          "labelSelector": "{service_name=~\"host/.+\"}",
+          "groupBy": []
+        }
+      ]
     }
   ]
 }

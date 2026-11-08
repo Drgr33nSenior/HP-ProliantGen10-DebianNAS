@@ -22,6 +22,32 @@ services:
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
     logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+{% if microserver_telemetry_profiles_enabled | bool %}
+  pyroscope:
+    image: {{ microserver_pyroscope_image }}
+    user: '10001:10001'
+    network_mode: host
+    # Rings that are configurable only by flag also advertise loopback.
+    command:
+      - -config.file=/etc/pyroscope/pyroscope.yaml
+      - -query-scheduler.ring.instance-addr=127.0.0.1
+      - -compactor.ring.instance-addr=127.0.0.1
+      - -store-gateway.sharding-ring.instance-addr=127.0.0.1
+    environment: {GOMEMLIMIT: 614MiB}
+    volumes:
+      - /etc/microserver/monitoring/pyroscope.yaml:/etc/pyroscope/pyroscope.yaml:ro
+      - /var/lib/microserver/pyroscope:/data
+    tmpfs: ['/tmp:size=16m,mode=1777']
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 0.25
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: {driver: local, options: {max-size: 10m, max-file: '3'}}
+{% endif %}
 {% endif %}
   prometheus:
     image: {{ microserver_prometheus_image }}

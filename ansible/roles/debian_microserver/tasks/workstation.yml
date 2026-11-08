@@ -57,15 +57,33 @@
   loop: [workstation, gpus, host, workloads, power, monitoring, kubernetes, pods]
   register: microserver_workstation_dashboards
 
-- name: Preserve existing dashboard files and refuse source drift
+- name: Refuse untrusted installed dashboard files
   tags: [workstation_verify]
   ansible.builtin.assert:
     that:
       - item.stat.exists and item.stat.isreg | default(false) and not item.stat.islnk | default(false)
       - item.stat.uid == 0 and item.stat.mode == '0644'
-      - item.stat.checksum == (lookup('ansible.builtin.file', playbook_dir + '/../observability/dashboards/' + item.item + '.json', rstrip=false) | hash('sha256'))
-    fail_msg: Review the installed dashboard and canonical source before changing this component.
+    fail_msg: Review the installed dashboard file type and ownership before changing this component.
   loop: '{{ microserver_workstation_dashboards.results }}'
+
+# The repository is the only maintained source for these eight dashboards, so
+# a dashboard change ships with this component instead of a full NAS apply.
+# Grafana re-reads provisioned files within 30 seconds; the verifier below then
+# checks every dashboard identity.
+- name: Install the eight canonical workstation dashboards
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/dashboards/{{ item }}.json'
+    dest: '/etc/microserver/monitoring/dashboard-folders/Infrastructure/{{ item }}.json'
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  loop: [workstation, gpus, host, workloads, power, monitoring, kubernetes, pods]
+  register: microserver_workstation_dashboard_install
+
+- name: Report replaced dashboard backups
+  ansible.builtin.debug:
+    msg: "{{ microserver_workstation_dashboard_install.results | selectattr('changed') | map(attribute='backup_file') | select('defined') | list }}"
 
 - name: Install the workstation component validators
   tags: [workstation_verify]

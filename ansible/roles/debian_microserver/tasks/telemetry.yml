@@ -42,6 +42,9 @@
     - {path: /etc/microserver/monitoring/provisioning/datasources/tempo.yaml, kind: file, uid: 0}
     - {path: /var/lib/microserver, kind: directory, uid: 0}
     - {path: /var/lib/microserver/tempo, kind: directory, uid: 10001}
+    - {path: /etc/microserver/monitoring/pyroscope.yaml, kind: file, uid: 0}
+    - {path: /etc/microserver/monitoring/provisioning/datasources/pyroscope.yaml, kind: file, uid: 0}
+    - {path: /var/lib/microserver/pyroscope, kind: directory, uid: 10001}
     - {path: /usr/local/libexec, kind: directory, uid: 0}
     - {path: /usr/local/libexec/microserver-telemetry-guard.py, kind: file, uid: 0}
   register: microserver_telemetry_paths
@@ -76,6 +79,25 @@
     - not ansible_check_mode
     - not (microserver_telemetry_paths.results | selectattr('item.path', 'equalto', '/etc/microserver/monitoring/tempo.yaml') | first).stat.exists
 
+- name: Keep an installed profiles backend unless it is explicitly retained
+  ansible.builtin.assert:
+    that:
+      - microserver_telemetry_profiles_enabled | bool or not (microserver_telemetry_paths.results | selectattr('item.path', 'equalto', '/etc/microserver/monitoring/pyroscope.yaml') | first).stat.exists
+    fail_msg: Pyroscope is installed; keep microserver_telemetry_profiles_enabled set for later applies.
+
+- name: Require unused profiles ports before first installation
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: '{{ item }}'
+    state: stopped
+    timeout: 1
+    connect_timeout: 1
+  loop: [4040, 9097, 9099, 7947]
+  when:
+    - not ansible_check_mode
+    - microserver_telemetry_profiles_enabled | bool
+    - not (microserver_telemetry_paths.results | selectattr('item.path', 'equalto', '/etc/microserver/monitoring/pyroscope.yaml') | first).stat.exists
+
 - name: Create only the new bounded trace state directory
   ansible.builtin.file:
     path: /var/lib/microserver/tempo
@@ -83,6 +105,15 @@
     owner: '10001'
     group: '10001'
     mode: '0700'
+
+- name: Create only the new bounded profiles state directory
+  ansible.builtin.file:
+    path: /var/lib/microserver/pyroscope
+    state: directory
+    owner: '10001'
+    group: '10001'
+    mode: '0700'
+  when: microserver_telemetry_profiles_enabled | bool
 
 - name: Install the component drift validator
   ansible.builtin.copy:
@@ -106,6 +137,24 @@
   changed_when: true
   when: microserver_tempo_image_state.rc != 0 and not ansible_check_mode
 
+- name: Inspect only the selected profiles image identity
+  ansible.builtin.command:
+    argv: [/usr/bin/docker, image, inspect, --format, "{{ '{{.Id}}' }}", '{{ microserver_pyroscope_image }}']
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  register: microserver_pyroscope_image_state
+  when: microserver_telemetry_profiles_enabled | bool
+
+- name: Fetch only the pinned profiles backend when missing
+  ansible.builtin.command:
+    argv: [/usr/bin/timeout, '180', /usr/bin/docker, pull, '{{ microserver_pyroscope_image }}']
+  changed_when: true
+  when:
+    - microserver_telemetry_profiles_enabled | bool
+    - microserver_pyroscope_image_state.rc != 0
+    - not ansible_check_mode
+
 - name: Validate and install the loopback trace backend configuration
   ansible.builtin.copy:
     src: '{{ playbook_dir }}/../observability/config/tempo.yaml'
@@ -125,6 +174,26 @@
     mode: '0644'
     backup: true
 
+- name: Install the loopback profiles backend configuration
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/config/pyroscope.yaml'
+    dest: /etc/microserver/monitoring/pyroscope.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  when: microserver_telemetry_profiles_enabled | bool
+
+- name: Provision the loopback Pyroscope datasource
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../observability/config/datasources.profiles.yaml'
+    dest: /etc/microserver/monitoring/provisioning/datasources/pyroscope.yaml
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  when: microserver_telemetry_profiles_enabled | bool
+
 - name: Add Tempo without modifying existing service definitions
   ansible.builtin.template:
     src: compose.yaml.j2
@@ -140,6 +209,28 @@
     argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, --force-recreate, tempo, grafana]
   changed_when: true
   when: not ansible_check_mode
+
+- name: Start only the profiles backend
+  ansible.builtin.command:
+    argv: [/usr/bin/docker-compose, --project-name, microserver, --file, /etc/microserver/monitoring/compose.yaml, up, --detach, --no-deps, --no-build, --pull, never, --force-recreate, pyroscope]
+  changed_when: true
+  when:
+    - microserver_telemetry_profiles_enabled | bool
+    - not ansible_check_mode
+
+- name: Verify the profiles backend before opening its routes
+  ansible.builtin.uri:
+    url: http://127.0.0.1:4040/ready
+    return_content: false
+    status_code: 200
+    timeout: 5
+  register: microserver_pyroscope_readiness
+  until: microserver_pyroscope_readiness.status | default(0) == 200
+  retries: 40
+  delay: 3
+  when:
+    - microserver_telemetry_profiles_enabled | bool
+    - not ansible_check_mode
 
 - name: Verify each retained backend before opening ingestion
   ansible.builtin.uri:

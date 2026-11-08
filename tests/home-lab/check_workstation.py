@@ -77,9 +77,17 @@ class WorkstationComponentTests(unittest.TestCase):
     def test_existing_nas_rules_are_separate_and_workstation_data_is_scoped(self):
         path = fixtures.ROOT / 'observability/config/workstation-alerts.yaml'
         rules = yaml.safe_load(path.read_text())['groups'][0]['rules']
-        self.assertEqual(len(rules), 16)
+        # The NAS verifier cannot parse YAML; its fixed count must match the source.
+        self.assertEqual(len(rules), verify.WORKSTATION_RULE_COUNT)
         names = {rule.get('alert', rule.get('record')) for rule in rules}
-        self.assertEqual(len(names), 16)
+        self.assertEqual(len(names), len(rules))
+        tested = {test['alert_rule_test'][0]['alertname'] for test in
+                  yaml.safe_load((fixtures.ROOT / 'tests/fixtures/microserver/workstation_alerts_test.yaml').read_text())['tests']}
+        new = {'WorkstationAIStackStageFailed', 'WorkstationAIStackStageStuck', 'WorkstationServingKVPoolSaturated',
+               'WorkstationServingRetracting', 'WorkstationServingSpeculativeAcceptanceLow',
+               'WorkstationServingTimeToFirstTokenSlow', 'WorkstationGatewayUnavailable'}
+        self.assertLessEqual(new, names)
+        self.assertLessEqual(new, tested)
         self.assertIn('WorkstationHostAlloyHeartbeatMissing', names)
         for rule in rules:
             if any(name in rule['expr'] for name in ['node_memory_', 'node_pressure_', 'node_filesystem_', 'workstation_gpu_', 'workstation_hardware_']):
@@ -201,6 +209,24 @@ class GrafanaMetadataTests(unittest.TestCase):
         self.connection.execute('UPDATE resource SET action=2')
         verify.verify_catalog(self.connection, self.expected)
 
+    def profiles_row(self, url):
+        self.connection.execute('INSERT INTO data_source VALUES (?,?,?,1,?,?)',
+                                ('pyroscope', 'grafana-pyroscope-datasource', url,
+                                 'DUMMY_FIXTURE_SECRET', 'DUMMY_FIXTURE_SECRET'))
+
+    def test_profiles_catalog_requires_the_pyroscope_datasource(self):
+        with self.assertRaisesRegex(RuntimeError, 'loopback datasource'):
+            verify.verify_catalog(self.connection, self.expected, dict(verify.SOURCES, **verify.PROFILES_SOURCE))
+
+    def test_profiles_catalog_accepts_only_the_loopback_pyroscope_datasource(self):
+        self.profiles_row('http://127.0.0.1:4040')
+        verify.verify_catalog(self.connection, self.expected, dict(verify.SOURCES, **verify.PROFILES_SOURCE))
+
+    def test_profiles_catalog_refuses_a_lan_pyroscope_datasource(self):
+        self.profiles_row('http://192.168.30.10:4040')
+        with self.assertRaisesRegex(RuntimeError, 'loopback datasource'):
+            verify.verify_catalog(self.connection, self.expected, dict(verify.SOURCES, **verify.PROFILES_SOURCE))
+
     def test_zfs_catalog_requires_its_resource_but_only_the_prometheus_datasource(self):
         self.document['metadata']['name'] = 'microserver-zfs'
         self.document['spec']['title'] = 'MicroServer / ZFS'
@@ -218,7 +244,7 @@ class GrafanaMetadataTests(unittest.TestCase):
              'rules': [dict(name=row.get('alert', row.get('record')), health='ok',
                             **({'state': 'firing'} if 'alert' in row else {})) for row in rules]},
             {'name': 'microserver', 'file': '/etc/prometheus/alerts.yaml', 'rules': [{}] * 6}]}}
-        self.assertEqual(verify.verify_rule_group(payload), 14)
+        self.assertEqual(verify.verify_rule_group(payload), sum('alert' in row for row in rules))
         changed = copy.deepcopy(payload)
         changed['data']['groups'][0]['rules'][0]['health'] = 'err'
         with self.assertRaisesRegex(RuntimeError, 'evaluation is not healthy'):
