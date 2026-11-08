@@ -1,6 +1,6 @@
 ---
 # Runs after the UI proxy render: prove trusted HTTPS, anonymous pulls through
-# the mirror, refusal of anonymous pushes and nothing served outside /v2/.
+# the mirror, refusal of anonymous pushes and the zui page at /.
 # Uses the NAS address with the registry SNI name: no DNS lookup or extra package.
 - name: Verify the registry over trusted HTTPS
   ansible.builtin.command:
@@ -27,7 +27,7 @@
         checks = [('api', 'GET', '/v2/', 200),
                   ('mirror-pull', 'GET', '/v2/registry.k8s.io/pause/manifests/3.10', 200),
                   ('anonymous-push-refused', 'POST', '/v2/local/verify/blobs/uploads/', 401),
-                  ('outside-v2', 'GET', '/', 404)]
+                  ('ui', 'GET', '/', 200)]
         results = {name: status(method, path) for name, method, path, _ in checks}
         print(json.dumps(results, sort_keys=True))
         if any(results[name] != expected for name, _, _, expected in checks):

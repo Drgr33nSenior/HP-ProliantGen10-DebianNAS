@@ -13,13 +13,18 @@ you build. Clients use `https://registry.<ui-domain>`, for example
 A mirrored image is fetched from upstream on its first pull and served from the
 NAS afterwards. Digest-pinned references keep their digests.
 
+Browse the registry with zui, Zot's web UI, at the same address. Anyone allowed
+to pull can search and inspect images; use **Log in** with the publisher account
+for the same permissions as a push client. CVE scanning is not enabled, so Zot
+downloads no vulnerability database.
+
 ## Design
 
 - Zot runs as a hardened container (read-only root, no capabilities,
   `no-new-privileges`, 1 GiB memory, one CPU) as the non-login `zot-registry`
   account (UID/GID 2001). It listens on `127.0.0.1:5000` only.
-- The intranet HTTPS proxy publishes only `/v2/` at
-  `registry.<ui-domain>:443` with the existing wildcard certificate. Its
+- The intranet HTTPS proxy publishes Zot at `registry.<ui-domain>:443` (zui at
+  `/`, the OCI API at `/v2/`) with the existing wildcard certificate. Its
   allowlist defaults to all RFC1918 networks
   (`microserver_registry_allowed_networks`); gateway firewall policies still
   decide which networks can reach the NAS. UI hosts keep their own allowlist.
@@ -50,7 +55,7 @@ HTTPS must already be commissioned ([INTRANET-TLS.md](INTRANET-TLS.md)).
    `microserver_registry_enabled: true`. The play creates the dataset and
    account, starts `microserver-registry.service`, re-renders the HTTPS proxy
    with the registry host, then verifies trusted HTTPS, an anonymous mirrored
-   pull, refusal of anonymous pushes and a 404 outside `/v2/`.
+   pull, refusal of anonymous pushes and the zui page.
 
 To rotate the publisher password, rerun the `htpasswd` command without `-c`.
 

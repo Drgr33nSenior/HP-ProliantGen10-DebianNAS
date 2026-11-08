@@ -122,6 +122,13 @@ class RegistryTests(unittest.TestCase):
             self.assertTrue(registry['onDemand'] and registry['tlsVerify'])
             self.assertEqual(registry['platforms'], ['linux/amd64'])
 
+    def test_ui_and_search_are_enabled_without_cve_scanning(self):
+        extensions = self.config()['extensions']
+        self.assertEqual(extensions['ui'], {'enable': True})
+        self.assertEqual(extensions['search'], {'enable': True})
+        # CVE scanning would download a vulnerability database; keep it off.
+        self.assertNotIn('cve', extensions['search'])
+
     def test_container_is_pinned_unprivileged_and_read_only(self):
         compose = yaml.safe_load(self.render('registry-compose.yaml.j2'))
         zot = compose['services']['zot']
@@ -136,7 +143,7 @@ class RegistryTests(unittest.TestCase):
             '/etc/microserver/private/registry-htpasswd:/etc/zot/htpasswd:ro',
             '/srv/microserver/registry:/var/lib/registry']))
 
-    def test_proxy_publishes_only_v2_over_https_to_private_networks(self):
+    def test_proxy_publishes_registry_and_ui_over_https_to_private_networks(self):
         text = self.render('ui-nginx.conf.j2')
         block = re.search(r'# BEGIN container registry\n(.*?)# END container registry', text, re.S).group(1)
         self.assertIn('listen 192.168.30.10:443 ssl;', block)
@@ -144,7 +151,7 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(re.findall(r'allow ([^;]+);', block), ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'])
         self.assertIn('deny all;', block)
         self.assertIn('client_max_body_size 0;', block)
-        self.assertEqual(re.findall(r'location ([^ ]+) ', block), ['/v2/', '/'])
+        self.assertEqual(re.findall(r'location ([^ ]+) ', block), ['/'])
         self.assertIn('proxy_pass http://127.0.0.1:5000;', block)
         self.assertNotIn(':80', block)
 
@@ -193,7 +200,7 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(argv[:2], ['/usr/bin/python3', '-c'])
         ast.parse(argv[2])
         for expected in ["('api', 'GET', '/v2/', 200)", "'/v2/registry.k8s.io/pause/manifests/3.10', 200",
-                         "'/v2/local/verify/blobs/uploads/', 401", "('outside-v2', 'GET', '/', 404)",
+                         "'/v2/local/verify/blobs/uploads/', 401", "('ui', 'GET', '/', 200)",
                          'server_hostname=host']:
             self.assertIn(expected, argv[2])
         for source in (ROLE / 'tasks').glob('registry*.yml'):

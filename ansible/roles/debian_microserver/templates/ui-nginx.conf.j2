@@ -92,10 +92,10 @@ http {
         proxy_buffering off;
         proxy_send_timeout 900s;
         proxy_read_timeout 900s;
-        location /v2/ {
+        # zui and its assets are served at /, the OCI API at /v2/.
+        location / {
             proxy_pass http://127.0.0.1:{{ microserver_registry_port }};
         }
-        location / { return 404; }
     }
     # END container registry
 {% endif %}
