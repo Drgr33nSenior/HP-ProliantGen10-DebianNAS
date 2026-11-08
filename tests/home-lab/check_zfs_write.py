@@ -31,7 +31,7 @@ class ZFSWriteTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b'original')
 
     def test_wrong_host_or_pool_guid_prevents_dataset_creation(self):
-        with mock.patch.object(write.os, 'geteuid', return_value=0), mock.patch.object(write.socket, 'gethostname', return_value='microserver'), mock.patch.object(write, 'run', return_value='999') as run:
+        with mock.patch.object(write.os, 'geteuid', return_value=0), mock.patch.object(write.socket, 'gethostname', return_value='ig0r'), mock.patch.object(write, 'run', return_value='999') as run:
             with self.assertRaises(RuntimeError):
                 write.accept('nas', '123')
             self.assertEqual(run.call_args_list, [mock.call(write.ZPOOL, 'get', '-H', '-o', 'value', 'guid', 'nas')])
@@ -84,7 +84,7 @@ class ZFSWriteTests(unittest.TestCase):
                 if args[:2] == (write.ZFS, 'create'):
                     raise RuntimeError('fixture create refused')
                 raise AssertionError('unexpected command')
-            with mock.patch.object(write.os, 'geteuid', return_value=0), mock.patch.object(write.socket, 'gethostname', return_value='microserver'), mock.patch.object(write, 'run', side_effect=command) as run, mock.patch.object(write, 'inventory', return_value={'nas'}), mock.patch.object(write, 'features', return_value={'feature@fixture'}), mock.patch.object(write, 'trusted_directory'), mock.patch.object(write.tempfile, 'mkdtemp', side_effect=[str(state_dir), str(runtime)]), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with mock.patch.object(write.os, 'geteuid', return_value=0), mock.patch.object(write.socket, 'gethostname', return_value='ig0r'), mock.patch.object(write, 'run', side_effect=command) as run, mock.patch.object(write, 'inventory', return_value={'nas'}), mock.patch.object(write, 'features', return_value={'feature@fixture'}), mock.patch.object(write, 'trusted_directory'), mock.patch.object(write.tempfile, 'mkdtemp', side_effect=[str(state_dir), str(runtime)]), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(RuntimeError):
                     write.accept('nas', '123')
             self.assertEqual(json.loads((state_dir / 'state.json').read_text())['stage'], 'prepared')

@@ -89,7 +89,7 @@ def digest(path):
 
 
 def accept(pool, guid):
-    require(os.geteuid() == 0 and socket.gethostname().split('.')[0] == 'microserver',
+    require(os.geteuid() == 0 and socket.gethostname().split('.')[0] == 'ig0r',
             'requires the owner NAS administrator session')
     require(pool == 'nas' and re.fullmatch(r'[0-9]{1,20}', guid) is not None, 'unexpected pool identity')
     require(run(ZPOOL, 'get', '-H', '-o', 'value', 'guid', pool) == guid, 'pool GUID mismatch')
