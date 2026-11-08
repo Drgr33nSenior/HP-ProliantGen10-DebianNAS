@@ -217,6 +217,7 @@ class TelemetryReceiverTests(unittest.TestCase):
         self.assertEqual(config['server']['grpc_listen_address'], '127.0.0.1')
         self.assertEqual((config['server']['http_listen_port'], config['server']['grpc_listen_port']), (4040, 9097))
         self.assertEqual(config['metastore']['address'], '127.0.0.1:9097')
+        self.assertEqual(config['query_backend']['address'], '127.0.0.1:9097')
         self.assertEqual(config['metastore']['raft']['bind_address'], '127.0.0.1:9099')
         self.assertEqual(config['memberlist']['bind_addr'], ['127.0.0.1'])
         for ring in (config['distributor']['ring'], config['overrides_exporter']['ring'], config['frontend']):
