@@ -77,13 +77,15 @@ tests:
           description: Read the stage build.log under ~/ai-stack/builds; the previous image remains the rollback.
   - name: Only a still-running stage older than 12 hours is stuck
     interval: 1m
+    # promtool evaluates time() from 0, so a start 50,000 s before it is
+    # already older than the 43,200 s (12 h) threshold.
     input_series:
     - series: workstation_ai_stack_stage_started_timestamp_seconds{job="node",instance="threadripper-ai",stage="rocm"}
-      values: '0x10'
+      values: '-50000+0x10'
     - series: workstation_ai_stack_stage_running{job="node",instance="threadripper-ai",stage="rocm"}
       values: 1x10
     - series: workstation_ai_stack_stage_started_timestamp_seconds{job="node",instance="threadripper-ai",stage="torch"}
-      values: '0x10'
+      values: '-50000+0x10'
     - series: workstation_ai_stack_stage_running{job="node",instance="threadripper-ai",stage="torch"}
       values: '0x10'
     alert_rule_test:
