@@ -125,7 +125,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**A quick view of the workstation.** Use the links above for detail. Click a GPU bar to focus on that card. \u201cUnavailable\u201d means the sensor or service has not supplied data; an offline serving endpoint does not mean the GPUs are faulty. GPU activity can be blank while cards are runtime-suspended; open **GPUs** for sensor availability."
+        "content": "**A quick view of the workstation.** Use the links above for detail. Click a GPU bar to focus on that card. \u201cUnavailable\u201d means the sensor or service has not supplied data; an offline serving endpoint does not mean the GPUs are faulty. GPU readings come from AMD's device metrics exporter and continue while cards are runtime-suspended (idle); open **GPUs** for the PCI link and power state."
       }
     },
     {
@@ -530,8 +530,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pci_bdf) (label_replace(gpu_gfx_activity{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\")) / 100",
-          "legendFormat": "{{pci_bdf}}",
+          "expr": "max by (gpu_id) (gpu_gfx_activity{job=\"amd-gpu\"}) / 100",
+          "legendFormat": "GPU {{gpu_id}}",
           "range": false,
           "instant": true
         }
@@ -551,7 +551,7 @@
           "links": [
             {
               "title": "Inspect this GPU",
-              "url": "/d/workstation-gpus?var-gpu=${__field.labels.pci_bdf}&${__url_time_range}",
+              "url": "/d/workstation-gpus?var-gpu=${__field.labels.gpu_id}&${__url_time_range}",
               "targetBlank": false
             }
           ]
@@ -598,8 +598,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "workstation_gpu_vram_used_bytes{job=\"node\"} / workstation_gpu_vram_total_bytes{job=\"node\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}}",
+          "expr": "max by (gpu_id) (gpu_used_vram{job=\"amd-gpu\"}) / max by (gpu_id) (gpu_total_vram{job=\"amd-gpu\"})",
+          "legendFormat": "GPU {{gpu_id}}",
           "range": false,
           "instant": true
         }
@@ -619,7 +619,7 @@
           "links": [
             {
               "title": "Inspect this GPU",
-              "url": "/d/workstation-gpus?var-gpu=${__field.labels.pci_bdf}&${__url_time_range}",
+              "url": "/d/workstation-gpus?var-gpu=${__field.labels.gpu_id}&${__url_time_range}",
               "targetBlank": false
             }
           ]

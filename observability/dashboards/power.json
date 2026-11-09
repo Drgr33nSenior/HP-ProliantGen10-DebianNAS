@@ -125,7 +125,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**PSU DC output** is the workstation's delivered power, not electricity drawn at the wall. GPU board readings are part of that load: do not add them to PSU output. The energy cards below are cumulative sampled estimates; they are not energy for the selected dashboard range or an inference task. GPU power and temperature can be blank while cards are runtime-suspended. Missing GPU readings do not mean zero watts or a PSU telemetry failure."
+        "content": "**PSU DC output** is the workstation's delivered power, not electricity drawn at the wall. GPU board readings are part of that load: do not add them to PSU output. The energy cards below are cumulative sampled estimates; they are not energy for the selected dashboard range or an inference task. GPU power and temperature come from AMD's device metrics exporter, which keeps reading runtime-suspended (idle) cards. Missing GPU readings do not mean zero watts or a PSU telemetry failure."
       }
     },
     {
@@ -327,8 +327,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pci_bdf) (label_replace(gpu_average_package_power{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}}",
+          "expr": "max by (gpu_id) (gpu_average_package_power{job=\"amd-gpu\"})",
+          "legendFormat": "GPU {{gpu_id}}",
           "range": true,
           "instant": false
         }
@@ -388,8 +388,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pci_bdf) (label_replace(gpu_junction_temperature{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}}",
+          "expr": "max by (gpu_id) (gpu_junction_temperature{job=\"amd-gpu\"})",
+          "legendFormat": "GPU {{gpu_id}}",
           "range": true,
           "instant": false
         }

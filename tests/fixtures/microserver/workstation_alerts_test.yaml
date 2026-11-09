@@ -224,3 +224,47 @@ tests:
           severity: warning
         exp_annotations:
           summary: An expected workstation telemetry target is unavailable
+  - name: GPU inventory and VRAM come from the AMD exporter, which is an expected target
+    interval: 1m
+    input_series:
+    - series: gpu_nodes_total{job="amd-gpu",instance="exporter"}
+      values: '2 2 1 1 1 1'
+    - series: gpu_total_vram{job="amd-gpu",instance="exporter",gpu_id="0",pod="a"}
+      values: '32624+0x9'
+    - series: gpu_used_vram{job="amd-gpu",instance="exporter",gpu_id="0",pod="a"}
+      values: '32500+0x9'
+    - series: gpu_total_vram{job="amd-gpu",instance="exporter",gpu_id="1",pod="a"}
+      values: '32624+0x9'
+    - series: gpu_used_vram{job="amd-gpu",instance="exporter",gpu_id="1",pod="a"}
+      values: '30915+0x9'
+    - series: up{job="amd-gpu",instance="exporter"}
+      values: '1 1 1 1 0 0 0 0 0 0'
+    alert_rule_test:
+    - eval_time: 1m
+      alertname: WorkstationGPUInventoryChanged
+      exp_alerts: []
+    - eval_time: 5m
+      alertname: WorkstationGPUInventoryChanged
+      exp_alerts:
+      - exp_labels:
+          severity: warning
+        exp_annotations:
+          summary: Discovered GPU count differs from this dual-R9700 workstation plan
+          description: Reconcile physical inventory and driver state; do not infer a failed card solely from this metric. Review this rule if the intended inventory changes.
+    - eval_time: 6m
+      alertname: WorkstationGPUVRAMNearlyFull
+      exp_alerts:
+      - exp_labels:
+          gpu_id: '0'
+          severity: warning
+        exp_annotations:
+          summary: One physical GPU has less than 2% VRAM headroom; inspect model/KV/workspace allocations
+    - eval_time: 9m
+      alertname: WorkstationExporterDown
+      exp_alerts:
+      - exp_labels:
+          job: amd-gpu
+          instance: exporter
+          severity: warning
+        exp_annotations:
+          summary: An expected workstation telemetry target is unavailable
