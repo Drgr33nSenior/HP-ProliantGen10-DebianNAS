@@ -6,6 +6,14 @@
     value: 'false'
     vtype: boolean
 
+- name: Run package work, including DKMS builds, at nice 19 with idle I/O
+  ansible.builtin.copy:
+    src: apt-90microserver-low-priority
+    dest: /etc/apt/apt.conf.d/90microserver-low-priority
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Install Debian storage and monitoring packages from configured signed repositories
   ansible.builtin.apt:
     name:

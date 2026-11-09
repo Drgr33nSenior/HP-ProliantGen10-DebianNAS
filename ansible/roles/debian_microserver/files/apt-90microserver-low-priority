@@ -1,0 +1,6 @@
+// Managed by the debian_microserver role.
+// Package work yields CPU and disk to serving. dpkg, and every DKMS build it
+// runs (such as zfs-dkms after a kernel update), inherits nice 19 and the idle
+// I/O class from the APT process. A failed hook aborts APT, so failures are
+// ignored: a slower update is acceptable, a blocked one is not.
+DPkg::Pre-Invoke { "/usr/bin/renice -n 19 -p $PPID >/dev/null 2>&1 || true; /usr/bin/ionice -c 3 -p $PPID >/dev/null 2>&1 || true"; };

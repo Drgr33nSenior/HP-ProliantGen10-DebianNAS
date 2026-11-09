@@ -29,6 +29,13 @@ upgrade records that empty mount baseline without creating or mounting a dataset
 If filesystems are mounted at preparation, acceptance requires each original
 dataset to remain mounted at its original path.
 
+Package work runs at low priority: the role installs
+`/etc/apt/apt.conf.d/90microserver-low-priority`, so dpkg and the DKMS build
+it runs inherit nice 19 and the idle I/O class. This applies to every APT
+run, including a kernel update by hand, which also rebuilds `zfs-dkms`. The
+build takes longer but leaves CPU and disk to the registry, NFS and
+monitoring on this two-core host.
+
 The running module remains at 2.3.9 until reboot. The playbook checks that DKMS
 installed the new module for the current kernel. If Secure Boot is enabled, the
 new module must retain the prior signing identity. It does not disable Secure

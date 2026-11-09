@@ -103,6 +103,18 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual((http['address'], http['port'], http['compat']), ('127.0.0.1', '5000', ['docker2s2']))
         self.assertEqual(http['auth']['htpasswd']['path'], '/etc/zot/htpasswd')
 
+    def test_large_layers_fit_the_zot_and_nginx_transfer_timeouts(self):
+        # Zot defaults readTimeout/writeTimeout to 60s for the whole request;
+        # a multi-GB layer upload took longer and Zot closed it (502 via nginx).
+        http = self.config()['http']
+        self.assertEqual((http['readTimeout'], http['writeTimeout']), ('1800s', '1800s'))
+        nginx = self.render('ui-nginx.conf.j2')
+        block = nginx[nginx.index('# BEGIN container registry'):nginx.index('# END container registry')]
+        self.assertIn('proxy_send_timeout 1800s;', block)
+        self.assertIn('proxy_read_timeout 1800s;', block)
+        self.assertIn('client_max_body_size 0;', block)
+        self.assertIn('proxy_request_buffering off;', block)
+
     def test_publisher_writes_only_local_and_everyone_reads(self):
         repositories = self.config()['http']['accessControl']['repositories']
         self.assertEqual(set(repositories), {'local/**', '**'})

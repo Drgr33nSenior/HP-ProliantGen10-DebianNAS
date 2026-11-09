@@ -90,8 +90,8 @@ http {
         client_max_body_size 0;
         proxy_request_buffering off;
         proxy_buffering off;
-        proxy_send_timeout 900s;
-        proxy_read_timeout 900s;
+        proxy_send_timeout {{ microserver_registry_transfer_timeout_seconds | int }}s;
+        proxy_read_timeout {{ microserver_registry_transfer_timeout_seconds | int }}s;
         # zui and its assets are served at /, the OCI API at /v2/.
         location / {
             proxy_pass http://127.0.0.1:{{ microserver_registry_port }};
