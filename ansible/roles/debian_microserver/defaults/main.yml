@@ -52,6 +52,9 @@ microserver_registry_quota: 1T
 microserver_registry_publisher: publisher
 microserver_registry_allowed_networks: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
 microserver_registry_image: 'ghcr.io/project-zot/zot-linux-amd64:v2.1.23@sha256:b68f727fe35c1eb45b2ae91519dfb0e33192d69b5104882c3e7809b7146c4a02'
+# PEM cosign public keys. Zot marks an image whose cosign signature verifies
+# against any of them as trusted; other signatures stay untrusted.
+microserver_registry_cosign_public_keys: []
 microserver_registry_upstreams:
   - {prefix: docker.io, url: 'https://registry-1.docker.io'}
   - {prefix: ghcr.io, url: 'https://ghcr.io'}
