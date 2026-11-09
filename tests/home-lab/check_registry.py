@@ -141,6 +141,34 @@ class RegistryTests(unittest.TestCase):
         # CVE scanning would download a vulnerability database; keep it off.
         self.assertNotIn('cve', extensions['search'])
 
+    def test_cosign_signatures_verify_against_the_reviewed_keys(self):
+        self.assertEqual(self.config()['extensions']['trust'], {'enable': True, 'cosign': True, 'notation': False})
+        self.assertEqual(read_yaml(ROLE / 'defaults/main.yml')['microserver_registry_cosign_public_keys'], [])
+        store = task(self.tasks, 'Create the registry cosign trust store')['ansible.builtin.file']
+        # Zot reads <rootDirectory>/_cosign; the dataset is mounted at its rootDirectory.
+        self.assertEqual(store['path'], '/srv/microserver/registry/_cosign')
+        self.assertEqual((store['owner'], store['group'], store['mode']),
+                         ('{{ microserver_registry_uid }}', '{{ microserver_registry_gid }}', '0750'))
+        keys = task(self.tasks, 'Trust the reviewed cosign public keys')
+        copy = keys['ansible.builtin.copy']
+        self.assertEqual(keys['loop'], '{{ microserver_registry_cosign_public_keys }}')
+        self.assertEqual(copy['content'], '{{ item | trim }}')
+        self.assertEqual(copy['dest'], '/srv/microserver/registry/_cosign/sha256:{{ item | trim | hash("sha256") }}')
+        self.assertEqual((copy['owner'], copy['group'], copy['mode']),
+                         ('{{ microserver_registry_uid }}', '{{ microserver_registry_gid }}', '0640'))
+        names = [item.get('name') for item in self.tasks]
+        self.assertLess(names.index('Require PEM public keys for the registry trust store'),
+                        names.index('Trust the reviewed cosign public keys'))
+        check = task(self.tasks, 'Require PEM public keys for the registry trust store')['ansible.builtin.assert']['that']
+        pattern = re.search(r"select\('match', '(.*)'\)", check[2], re.S).group(1)
+        key = ('-----BEGIN PUBLIC KEY-----\n'
+               'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEexampleexampleexampleexampleexamplee\n'
+               'xampleexampleexampleexampleexampleexampleexampleexampleexample==\n'
+               '-----END PUBLIC KEY-----')
+        self.assertTrue(re.match(pattern, key))
+        for bad in ('-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----', 'ssh-ed25519 AAAA', ''):
+            self.assertIsNone(re.match(pattern, bad), bad)
+
     def test_container_is_pinned_unprivileged_and_read_only(self):
         compose = yaml.safe_load(self.render('registry-compose.yaml.j2'))
         zot = compose['services']['zot']

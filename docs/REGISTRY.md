@@ -18,6 +18,17 @@ to pull can search and inspect images; use **Log in** with the publisher account
 for the same permissions as a push client. CVE scanning is not enabled, so Zot
 downloads no vulnerability database.
 
+Zot verifies cosign signatures against the public keys in
+`microserver_registry_cosign_public_keys` and shows a signed image as trusted
+when its signature verifies against one of them. The AI-stack build signs every
+image it pushes under `local/` with the key whose public half is the workstation
+repository's `infrastructure/ai-stack/signing/cosign.pub`; add that file's
+contents to the owner profile. The play writes each key to
+`/srv/microserver/registry/_cosign/sha256:<digest of the key>`, which Zot reads
+at every verification. Zot rechecks stored signatures every 2 hours, so existing
+images change to trusted within 2 hours of the play. Removing a key from the
+list does not delete its file; delete it on the NAS.
+
 ## Design
 
 - Zot runs as a hardened container (read-only root, no capabilities,

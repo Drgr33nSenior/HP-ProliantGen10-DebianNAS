@@ -126,6 +126,42 @@
     follow: false
   when: not ansible_check_mode or microserver_registry_dataset.rc == 0
 
+- name: Require PEM public keys for the registry trust store
+  ansible.builtin.assert:
+    that:
+      - microserver_registry_cosign_public_keys is sequence
+      - microserver_registry_cosign_public_keys is not string
+      - >-
+        microserver_registry_cosign_public_keys | map('trim')
+        | select('match', '^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]+\n-----END PUBLIC KEY-----$')
+        | list | length == microserver_registry_cosign_public_keys | length
+    fail_msg: microserver_registry_cosign_public_keys must be a list of PEM public keys (BEGIN PUBLIC KEY).
+    quiet: true
+
+# Zot re-reads every file in <rootDirectory>/_cosign each time it verifies a
+# signature and revalidates stored signatures every 2 hours. Files are named
+# like its upload API names them. Keys removed from the list are not deleted.
+- name: Create the registry cosign trust store
+  ansible.builtin.file:
+    path: /srv/microserver/registry/_cosign
+    state: directory
+    owner: '{{ microserver_registry_uid }}'
+    group: '{{ microserver_registry_gid }}'
+    mode: '0750'
+  when: not ansible_check_mode or microserver_registry_dataset.rc == 0
+
+- name: Trust the reviewed cosign public keys
+  ansible.builtin.copy:
+    content: '{{ item | trim }}'
+    dest: '/srv/microserver/registry/_cosign/sha256:{{ item | trim | hash("sha256") }}'
+    owner: '{{ microserver_registry_uid }}'
+    group: '{{ microserver_registry_gid }}'
+    mode: '0640'
+  loop: '{{ microserver_registry_cosign_public_keys }}'
+  loop_control:
+    label: 'sha256:{{ item | trim | hash("sha256") }}'
+  when: not ansible_check_mode or microserver_registry_dataset.rc == 0
+
 - name: Install htpasswd for the owner-created publisher credential
   ansible.builtin.apt:
     name: apache2-utils
