@@ -106,6 +106,21 @@ class MicroServerTests(unittest.TestCase):
         self.assertTrue({'docker.io', 'docker-cli', 'docker-compose'} <= set(apt['name']))
         self.assertTrue({'apparmor', 'zfs-zed', 'amd64-microcode', 'firmware-misc-nonfree', 'firmware-amd-graphics', 'ethtool', 'pciutils', 'lm-sensors', 'iperf3', 'nftables', 'systemd-timesyncd', 'irqbalance', 'linux-cpupower', 'powertop', 'tuned'} <= set(apt['name']))
 
+    def test_package_work_runs_at_low_cpu_and_io_priority_before_installs(self):
+        tasks = read_yaml(ROLE / 'tasks/packages.yml')
+        names = [next(k for k in task if k.startswith('ansible.builtin.')) for task in tasks]
+        hook = next(task['ansible.builtin.copy'] for task in tasks if 'ansible.builtin.copy' in task)
+        self.assertEqual(hook['dest'], '/etc/apt/apt.conf.d/90microserver-low-priority')
+        self.assertEqual((hook['owner'], hook['mode']), ('root', '0644'))
+        # The hook is in place before the first package installation.
+        self.assertLess(names.index('ansible.builtin.copy'), names.index('ansible.builtin.apt'))
+        text = (ROLE / 'files/apt-90microserver-low-priority').read_text()
+        line = next(l for l in text.splitlines() if l.startswith('DPkg::Pre-Invoke'))
+        self.assertIn('/usr/bin/renice -n 19 -p $PPID', line)
+        self.assertIn('/usr/bin/ionice -c 3 -p $PPID', line)
+        # A failing Pre-Invoke hook aborts APT; both commands must not fail it.
+        self.assertEqual(line.count('|| true'), 2)
+
     def test_iommu_workaround_is_in_installer_and_persistent_boot_options(self):
         for name, command in [('grub-entry.cfg', 'linux '), ('isolinux-entry.cfg', 'append ')]:
             lines = (ROOT / 'installer/media' / name).read_text().splitlines()

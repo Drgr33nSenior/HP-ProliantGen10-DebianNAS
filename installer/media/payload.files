@@ -38,6 +38,7 @@ ansible/roles/debian_microserver/tasks/cockpit.yml
 ansible/roles/debian_microserver/tasks/houston-alerts-preserve.yml
 ansible/roles/debian_microserver/templates/alertmanager.yaml.j2
 ansible/roles/debian_microserver/templates/microserver-houston-policy.conf.j2
+ansible/roles/debian_microserver/files/apt-90microserver-low-priority
 ansible/roles/debian_microserver/files/microserver-houston-dbus.py
 ansible/roles/debian_microserver/files/microserver-houston-dbus.conf
 ansible/roles/debian_microserver/files/microserver-houston-webhook.py
