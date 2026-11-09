@@ -113,15 +113,15 @@
     "list": [
       {
         "name": "gpu",
-        "label": "GPU \u00b7 PCI address",
+        "label": "GPU",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(workstation_gpu_info{job=\"node\"}, pci_bdf)",
+        "definition": "label_values(gpu_total_vram{job=\"amd-gpu\"}, gpu_id)",
         "query": {
-          "query": "label_values(workstation_gpu_info{job=\"node\"}, pci_bdf)",
+          "query": "label_values(gpu_total_vram{job=\"amd-gpu\"}, gpu_id)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -129,12 +129,6 @@
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
-        },
-        "options": [],
         "hide": 0,
         "skipUrlSync": false
       }
@@ -153,14 +147,14 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Power, temperature, activity and clocks come from AMD's device metrics exporter, which keeps reading a card while it is runtime-suspended (idle). VRAM capacity, PCIe width and identity come from the workstation's sysfs sampler, whose activity and clock channels are unreadable while a card is runtime-suspended; the availability panel shows that, and it is not a fault. The PCI runtime power state is not a power reading: an idle card in D0 can draw as little as a suspended one, while a card driving a monitor draws more."
+        "content": "Power, temperature, clocks, activity and VRAM come from AMD's device metrics exporter, which keeps reading a card while it is runtime-suspended (idle). Cards are numbered by the exporter's GPU id: GPU 0 is PCI 0000:23:00.0 and GPU 1 is 0000:c3:00.0 (the exporter enumerates in PCI order). The PCI link and runtime power state come from node-exporter's pcidevice collector, keyed by PCI address. The power state is not a power reading: an idle card in D0 can draw as little as a suspended one, while a card driving a monitor draws more."
       }
     },
     {
-      "id": 11,
-      "title": "Activity / clock sensor availability",
+      "id": 12,
+      "title": "PCI runtime power state",
       "type": "stat",
-      "description": "Minimum readability of the busy/core-clock/memory-clock channels per card. 0 means at least one channel was unavailable, including when runtime-suspended; it does not imply a hardware fault or zero activity. No data means the fresh availability observation itself is missing.",
+      "description": "D0 is active; D3hot is runtime-suspended (idle). From node-exporter's pcidevice collector, one value per GPU display function.",
       "gridPos": {
         "x": 0,
         "y": 4,
@@ -174,9 +168,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "min by (pci_bdf) (workstation_gpu_sensor_available{job=\"node\",pci_bdf=~\"${gpu:regex}\",sensor=~\"busy_percent|core_clock_hertz|memory_clock_hertz\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10))",
-          "legendFormat": "{{pci_bdf}}",
-          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(node_pcidevice_power_state{job=\"node\"} == 1) * on(segment,bus,device,function) group_left() node_pcidevice_info{job=\"node\",vendor_id=\"0x1002\",class_id=\"0x030000\"}",
+          "legendFormat": "{{segment}}:{{bus}}:{{device}}.{{function}} \u00b7 {{state}}",
           "instant": true
         }
       ],
@@ -184,21 +181,7 @@
         "defaults": {
           "unit": "none",
           "noValue": "Telemetry unavailable",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "Unavailable (may be asleep)",
-                  "color": "text"
-                },
-                "1": {
-                  "text": "Readable",
-                  "color": "green"
-                }
-              }
-            }
-          ]
+          "mappings": []
         },
         "overrides": []
       },
@@ -211,69 +194,8 @@
           "fields": ""
         },
         "orientation": "horizontal",
-        "textMode": "value_and_name",
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
-    },
-    {
-      "id": 12,
-      "title": "PCI runtime power state",
-      "type": "stat",
-      "description": "The kernel's runtime power-management state per card: Active means the card is in PCI D0, Suspended means D3. It is not a power reading. An idle card in D0 can still draw about 1 W, because the driver gates its engines internally; use Package power for actual draw. A card driving a monitor stays in D0 and draws more. Until the updated sampler reports this directly, a card whose activity sensor is unreadable is shown as suspended.",
-      "gridPos": {
-        "x": 12,
-        "y": 4,
-        "w": 12,
-        "h": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "legendFormat": "{{pci_bdf}}",
-          "range": false,
-          "instant": true,
-          "expr": "max by (pci_bdf) (workstation_gpu_runtime_suspended{job=\"node\",pci_bdf=~\"${gpu:regex}\"}) or (1 - min by (pci_bdf) (workstation_gpu_sensor_available{job=\"node\",pci_bdf=~\"${gpu:regex}\",sensor=\"busy_percent\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90)))"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "Power state unavailable",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "Active (D0)",
-                  "color": "text"
-                },
-                "1": {
-                  "text": "Suspended (D3)",
-                  "color": "text"
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "orientation": "horizontal",
-        "textMode": "value_and_name",
-        "colorMode": "value",
+        "textMode": "name",
+        "colorMode": "none",
         "graphMode": "none",
         "justifyMode": "auto"
       }
@@ -296,8 +218,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pci_bdf) (label_replace(gpu_average_package_power{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}}",
+          "expr": "max by (gpu_id) (gpu_average_package_power{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\"})",
+          "legendFormat": "GPU {{gpu_id}}",
           "range": true,
           "instant": false
         }
@@ -358,8 +280,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pci_bdf) (label_replace(gpu_junction_temperature{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}}",
+          "expr": "max by (gpu_id) (gpu_junction_temperature{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\"})",
+          "legendFormat": "GPU {{gpu_id}}",
           "range": true,
           "instant": false
         }
@@ -419,8 +341,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pci_bdf) (label_replace(gpu_gfx_activity{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}}",
+          "expr": "max by (gpu_id) (gpu_gfx_activity{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\"})",
+          "legendFormat": "GPU {{gpu_id}}",
           "range": true,
           "instant": false
         }
@@ -466,7 +388,7 @@
     },
     {
       "id": 3,
-      "title": "VRAM used and physical capacity",
+      "title": "VRAM used and capacity",
       "type": "timeseries",
       "description": "Separate capacity per GPU; do not treat two cards as one allocation.",
       "gridPos": {
@@ -482,22 +404,22 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "workstation_gpu_vram_used_bytes{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}} used",
+          "expr": "max by (gpu_id) (gpu_used_vram{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\"})",
+          "legendFormat": "GPU {{gpu_id}} used",
           "range": true,
           "instant": false
         },
         {
           "refId": "B",
-          "expr": "workstation_gpu_vram_total_bytes{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}} total",
+          "expr": "max by (gpu_id) (gpu_total_vram{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\"})",
+          "legendFormat": "GPU {{gpu_id}} capacity",
           "range": true,
           "instant": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "mbytes",
           "noValue": "Unavailable",
           "color": {
             "mode": "palette-classic"
@@ -550,15 +472,15 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pci_bdf) (label_replace(gpu_memory_temperature{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}} memory",
+          "expr": "max by (gpu_id) (gpu_memory_temperature{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\"})",
+          "legendFormat": "GPU {{gpu_id}} memory",
           "range": true,
           "instant": false
         },
         {
           "refId": "B",
-          "expr": "max by (pci_bdf) (label_replace(gpu_edge_temperature{job=\"amd-gpu\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}} edge",
+          "expr": "max by (gpu_id) (gpu_edge_temperature{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\"})",
+          "legendFormat": "GPU {{gpu_id}} edge",
           "range": true,
           "instant": false
         }
@@ -618,15 +540,15 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pci_bdf) (label_replace(gpu_clock{job=\"amd-gpu\",clock_type=\"system\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}} core",
+          "expr": "max by (gpu_id) (gpu_clock{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\",clock_type=\"system\"})",
+          "legendFormat": "GPU {{gpu_id}} core",
           "range": true,
           "instant": false
         },
         {
           "refId": "B",
-          "expr": "max by (pci_bdf) (label_replace(gpu_clock{job=\"amd-gpu\",clock_type=\"memory\"}, \"card\", \"$1\", \"gpu_uuid\", \".*-([0-9a-f]{12})\") * on(card) group_left(pci_bdf) label_replace(workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"}, \"card\", \"$1\", \"unique_id\", \".*([0-9a-f]{12})\"))",
-          "legendFormat": "{{pci_bdf}} memory",
+          "expr": "max by (gpu_id) (gpu_clock{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\",clock_type=\"memory\"})",
+          "legendFormat": "GPU {{gpu_id}} memory",
           "range": true,
           "instant": false
         }
@@ -671,14 +593,14 @@
     },
     {
       "id": 8,
-      "title": "Negotiated PCIe width",
+      "title": "Negotiated PCIe link \u00b7 width and speed",
       "type": "stat",
-      "description": "Current negotiated lane width. Link speed/traffic and P2P correctness are separate checks.",
+      "description": "Current link width (lanes) and speed (GT/s) per GPU display function, from node-exporter's pcidevice collector. Full link: x16 at 32 GT/s (PCIe 5.0).",
       "gridPos": {
-        "x": 0,
-        "y": 29,
-        "w": 6,
-        "h": 5
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -687,22 +609,36 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "workstation_gpu_pcie_width{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}}",
-          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "node_pcidevice_current_link_width{job=\"node\"} * on(segment,bus,device,function) group_left() node_pcidevice_info{job=\"node\",vendor_id=\"0x1002\",class_id=\"0x030000\"}",
+          "legendFormat": "{{bus}} lanes",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "node_pcidevice_current_link_transfers_per_second{job=\"node\"} / 1e9 * on(segment,bus,device,function) group_left() node_pcidevice_info{job=\"node\",vendor_id=\"0x1002\",class_id=\"0x030000\"}",
+          "legendFormat": "{{bus}} GT/s",
           "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "noValue": "Unavailable",
+          "unit": "none",
+          "noValue": "Telemetry unavailable",
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
             "spanNulls": false
-          }
+          },
+          "mappings": []
         },
         "overrides": []
       },
@@ -722,74 +658,13 @@
       }
     },
     {
-      "id": 9,
-      "title": "Available sensor channels",
-      "type": "table",
-      "description": "1 = this sampler could read the channel; 0 = channel unavailable. A readable channel does not establish sensor accuracy.",
-      "gridPos": {
-        "x": 6,
-        "y": 29,
-        "w": 18,
-        "h": 5
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "workstation_gpu_sensor_available{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}} \u00b7 {{sensor}}",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "Unavailable",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "spanNulls": false
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "Unavailable",
-                  "color": "text"
-                },
-                "1": {
-                  "text": "Readable",
-                  "color": "green"
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        }
-      }
-    },
-    {
       "id": 10,
       "title": "GPU identity",
       "type": "table",
-      "description": "Stable PCI address and kernel GPU identity, not a permanent GPU index.",
+      "description": "Card identity from AMD's device metrics exporter.",
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 29,
         "w": 24,
         "h": 5
       },
@@ -800,9 +675,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "workstation_gpu_info{job=\"node\",pci_bdf=~\"${gpu:regex}\"} and on(job,instance) (time() - workstation_hardware_sample_timestamp_seconds{job=\"node\"} <= 90) and on(job,instance) (workstation_hardware_sample_timestamp_seconds{job=\"node\"} - time() <= 10)",
-          "legendFormat": "{{pci_bdf}}",
-          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (gpu_id, gpu_uuid, card_model, hostname) (gpu_total_vram{job=\"amd-gpu\",gpu_id=~\"${gpu:regex}\"})",
+          "legendFormat": "GPU {{gpu_id}}",
           "instant": true,
           "format": "table"
         }

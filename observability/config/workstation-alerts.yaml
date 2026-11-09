@@ -27,7 +27,7 @@ groups:
           summary: 'XFS free space below 15%'
           description: 'Review model/build/log retention. PVC requested sizes are not filesystem quotas.'
       - alert: WorkstationExporterDown
-        expr: 'up{job=~"node|kube-state-metrics|alloy|alloy-ebpf|workstation-host-alloy|prometheus|loki|tempo|grafana"} == 0'
+        expr: 'up{job=~"node|kube-state-metrics|alloy|alloy-ebpf|workstation-host-alloy|prometheus|loki|tempo|grafana|amd-gpu"} == 0'
         for: 5m
         labels: {severity: warning}
         annotations: {summary: 'An expected workstation telemetry target is unavailable'}
@@ -73,14 +73,14 @@ groups:
         labels: {severity: warning}
         annotations: {summary: 'Host hardware sampler is missing or stale; check its timer and textfile permissions'}
       - alert: WorkstationGPUInventoryChanged
-        expr: 'workstation_gpu_count{job="node"} != 2'
+        expr: 'max(gpu_nodes_total{job="amd-gpu"}) != 2'
         for: 2m
         labels: {severity: warning}
         annotations:
           summary: 'Discovered GPU count differs from this dual-R9700 workstation plan'
           description: 'Reconcile physical inventory and driver state; do not infer a failed card solely from this metric. Review this rule if the intended inventory changes.'
       - alert: WorkstationGPUVRAMNearlyFull
-        expr: 'workstation_gpu_vram_used_bytes{job="node"} / workstation_gpu_vram_total_bytes{job="node"} > 0.98'
+        expr: 'max by (gpu_id) (gpu_used_vram{job="amd-gpu"}) / max by (gpu_id) (gpu_total_vram{job="amd-gpu"}) > 0.98'
         for: 5m
         labels: {severity: warning}
         annotations: {summary: 'One physical GPU has less than 2% VRAM headroom; inspect model/KV/workspace allocations'}
