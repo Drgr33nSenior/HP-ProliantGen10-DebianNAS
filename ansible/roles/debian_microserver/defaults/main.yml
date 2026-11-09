@@ -43,6 +43,9 @@ microserver_k8s_quota: 1T
 microserver_registry_enabled: false
 microserver_registry_host: registry
 microserver_registry_port: 5000
+# Longest single blob upload or download. Zot's own default is 60 seconds for
+# the whole request, which cuts off multi-GB layers; nginx uses the same value.
+microserver_registry_transfer_timeout_seconds: 1800
 microserver_registry_uid: 2001
 microserver_registry_gid: 2001
 microserver_registry_quota: 1T

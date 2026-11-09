@@ -23,6 +23,11 @@ downloads no vulnerability database.
 - Zot runs as a hardened container (read-only root, no capabilities,
   `no-new-privileges`, 1 GiB memory, one CPU) as the non-login `zot-registry`
   account (UID/GID 2001). It listens on `127.0.0.1:5000` only.
+- One blob transfer may take up to `microserver_registry_transfer_timeout_seconds`
+  (30 minutes by default), set as Zot's `readTimeout`/`writeTimeout` and as the
+  proxy's send/read timeouts. Zot otherwise ends every request after 60
+  seconds, and on one CPU a multi-GB layer upload took longer (502 at the
+  proxy, 2026-11-09).
 - The intranet HTTPS proxy publishes Zot at `registry.<ui-domain>:443` (zui at
   `/`, the OCI API at `/v2/`) with the existing wildcard certificate. Its
   allowlist defaults to all RFC1918 networks
