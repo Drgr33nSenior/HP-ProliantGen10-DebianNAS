@@ -146,7 +146,7 @@ See [Debian's TuneD package](https://packages.debian.org/trixie/tuned) and
 [TuneD profile documentation](https://tuned-project.org/docs/manual.html#creating-new-tuned-profiles).
 
 Run the independent owner tuning stage from the current reviewed checkout with
-the same verified private inventory, host alias and target classification:
+the same verified private inventory and host alias:
 
 ```sh
 ANSIBLE_HOST_KEY_CHECKING=True ansible-playbook \

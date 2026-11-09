@@ -5,10 +5,9 @@
   gather_facts: true
   serial: 1
   pre_tasks:
-    - name: Require the commissioned production NAS and explicit owner operation
+    - name: Require the commissioned NAS and explicit owner operation
       ansible.builtin.assert:
         that:
-          - microserver_environment | default('unmapped') == 'prd'
           - microserver_owner_install | default(false) | bool
           - ansible_play_hosts_all | length == 1
           - ansible_facts.hostname == 'ig0r'

@@ -77,7 +77,7 @@ Syslog transport needs no controller credentials; API credentials remain
 separate for future performance polling.
 
 Run the reviewed owner monitoring apply with `microserver_monitoring_enabled:
-true`. Production remains an owner-run operation through `owner-install.yml`.
+true` through `owner-install.yml`.
 It preserves the Grafana credential and service data, restarts monitoring for
 the new configuration and checks service/plugin readiness.
 

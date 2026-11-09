@@ -67,9 +67,9 @@ class CockpitTests(unittest.TestCase):
             users = Path(directory) / 'users'
             playbook = Path(directory) / 'fixture.yml'
             # Exercise Ansible's real templating and copy path in an owned local
-            # tst directory. Production file ownership is checked above.
-            fixture = [dict(name='Local tst Cockpit allowlist fixture', hosts='localhost', gather_facts=False,
-                            vars=dict(microserver_environment='tst', microserver_cockpit_admin='nasadmin'), tasks=[
+            # temporary directory. NAS file ownership is checked above.
+            fixture = [dict(name='Local Cockpit allowlist fixture', hosts='localhost', gather_facts=False,
+                            vars=dict(microserver_cockpit_admin='nasadmin'), tasks=[
                                 {'name': 'Write only the fixture allowlist', 'ansible.builtin.copy':
                                  dict(content=copy['content'], dest=str(users), mode='0600')}])]
             playbook.write_text(yaml.safe_dump(fixture))

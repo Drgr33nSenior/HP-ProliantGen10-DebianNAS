@@ -129,14 +129,13 @@ class IntranetUITests(unittest.TestCase):
             bad['stat'].update(changes)
             self.assertFalse(assertions(task, dict(item=bad)))
 
-    def test_owner_entry_point_requires_explicit_production_scope_and_only_imports_ui(self):
+    def test_owner_entry_point_requires_explicit_intent_and_only_imports_ui(self):
         play = read_yaml(ROOT / 'ansible/owner-ui.yml')[0]
         guard = play['pre_tasks'][0]
-        context = dict(microserver_environment='prd', microserver_owner_install=True, ansible_play_hosts_all=['nas'],
+        context = dict(microserver_owner_install=True, ansible_play_hosts_all=['nas'],
                        ansible_facts=dict(distribution='Debian', distribution_major_version='13', architecture='x86_64'))
         self.assertTrue(assertions(guard, context))
         self.assertFalse(assertions(guard, dict(context, microserver_owner_install=False)))
-        self.assertFalse(assertions(guard, dict(context, microserver_environment='unmapped')))
         self.assertFalse(assertions(guard, dict(context, ansible_play_hosts_all=['nas', 'other'])))
         self.assertEqual(play['tasks'][0]['ansible.builtin.import_role']['tasks_from'], 'ui')
 

@@ -202,7 +202,7 @@ class MicroServerTests(unittest.TestCase):
 
     def test_target_boundary(self):
         task = read_yaml(ROOT / 'ansible/microserver.yml')[0]['pre_tasks'][0]
-        valid = dict(microserver_environment='tst', ansible_play_hosts_all=['nas'],
+        valid = dict(ansible_play_hosts_all=['nas'],
                      ansible_facts=dict(distribution='Debian', distribution_major_version='13',
                                         architecture='x86_64'))
         self.assertTrue(assertions(task, valid))
@@ -211,9 +211,15 @@ class MicroServerTests(unittest.TestCase):
             invalid = copy.deepcopy(valid)
             invalid['ansible_facts'][field] = value
             self.assertFalse(assertions(task, invalid))
-        for change in [dict(microserver_environment='prd'), dict(microserver_environment='unmapped'),
-                       dict(ansible_play_hosts_all=['nas', 'workstation'])]:
-            self.assertFalse(assertions(task, dict(valid, **change)))
+        self.assertFalse(assertions(task, dict(valid, ansible_play_hosts_all=['nas', 'workstation'])))
+
+    def test_plays_do_not_classify_the_home_lab_target(self):
+        # The NAS is a home-lab host; no dev/tst/int/prd lifecycle gate applies.
+        sources = [ROOT / 'ansible/microserver.inventory.example.ini', *sorted((ROOT / 'ansible').glob('*.yml')),
+                   *sorted((ROLE / 'tasks').glob('*.yml'))]
+        for source in sources:
+            with self.subTest(source=source.name):
+                self.assertNotIn('microserver_environment', source.read_text())
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'Ansible is required to inspect task selection')
     def test_independent_commissioning_does_not_select_storage_tasks(self):
@@ -242,14 +248,13 @@ class MicroServerTests(unittest.TestCase):
         for task in self.storage:
             self.assertIn(task['name'], configured.stdout)
 
-    def test_owner_production_entry_requires_explicit_intent(self):
+    def test_owner_entry_requires_explicit_intent(self):
         task = read_yaml(ROOT / 'ansible/owner-install.yml')[0]['pre_tasks'][0]
-        valid = dict(microserver_environment='prd', microserver_owner_install=True,
+        valid = dict(microserver_owner_install=True,
                      ansible_play_hosts_all=['nas'], ansible_facts=dict(
                          distribution='Debian', distribution_major_version='13', architecture='x86_64'))
         self.assertTrue(assertions(task, valid))
-        for change in [dict(microserver_owner_install=False), dict(microserver_environment='unmapped'),
-                       dict(microserver_environment='tst'), dict(ansible_play_hosts_all=['nas', 'other'])]:
+        for change in [dict(microserver_owner_install=False), dict(ansible_play_hosts_all=['nas', 'other'])]:
             self.assertFalse(assertions(task, dict(valid, **change)))
         missing = dict(valid)
         del missing['microserver_owner_install']
@@ -377,7 +382,7 @@ class MicroServerTests(unittest.TestCase):
                 export = '# Managed for one owner-selected dataset. root_squash preserves server ownership.\n'
                 export += '/srv/microserver/shared' + ''.join(
                     ' ' + address + '(rw,sync,root_squash,no_subtree_check,mountpoint)' for address in addresses)
-                variables.update(microserver_environment='tst', microserver_nfs_clients=clients,
+                variables.update(microserver_nfs_clients=clients,
                                  ansible_python_interpreter=sys.executable,
                                  expected_success=expected is not None, expected_addresses=addresses,
                                  expected_export=export, exports_template=str(ROLE / 'templates/exports.j2'))

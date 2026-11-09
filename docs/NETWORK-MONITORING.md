@@ -151,8 +151,7 @@ microserver_unifi_username: ''       # Required only with auth_method: password.
 microserver_unifi_custom_ca: false   # True only after the verified CA file exists.
 ```
 
-Run the reviewed owner monitoring apply. Production deployment remains
-owner-run through `ansible/owner-install.yml`; the agent does not run it.
+Run the reviewed owner monitoring apply through `ansible/owner-install.yml`.
 Existing syslog settings and service data remain in place. Polling is disabled
 by default, so folder and NAS-link panels can be installed before credentials
 are ready.

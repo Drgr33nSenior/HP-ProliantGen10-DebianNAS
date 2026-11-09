@@ -8,7 +8,6 @@
     - name: Require one commissioned NAS with the retained HTTPS profile
       ansible.builtin.assert:
         that:
-          - microserver_environment | default('unmapped') == 'prd'
           - microserver_owner_install | default(false) | bool
           - ansible_play_hosts_all | length == 1
           - ansible_facts.hostname == 'ig0r'

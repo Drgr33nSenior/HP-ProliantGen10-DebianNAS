@@ -6,10 +6,9 @@
   gather_facts: true
   serial: 1
   pre_tasks:
-    - name: Require one explicitly authorised production MicroServer
+    - name: Require one commissioned MicroServer
       ansible.builtin.assert:
         that:
-          - microserver_environment | default('unmapped') == 'prd'
           - microserver_owner_install | default(false) | bool
           - ansible_facts.distribution == 'Debian'
           - ansible_facts.distribution_major_version == '13'
