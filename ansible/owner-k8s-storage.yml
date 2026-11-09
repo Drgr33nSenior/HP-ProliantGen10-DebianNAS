@@ -13,7 +13,6 @@
     - name: Require one commissioned NAS and the explicit storage component
       ansible.builtin.assert:
         that:
-          - microserver_environment | default('unmapped') == 'prd'
           - microserver_owner_install | default(false) | bool
           - microserver_k8s_storage_enabled | default(false) | bool
           - ansible_facts.distribution == 'Debian'

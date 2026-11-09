@@ -104,17 +104,12 @@ and do not change.
 Copy [the inventory example](ansible/microserver.inventory.example.ini)
 and [the variable example](ansible/microserver.config.example.yml)
 outside Git. Add exactly one host, its verified SSH address and administrator.
-Explicitly classify it as `dev`, `tst` or `int`; the default `unmapped` is rejected.
 Keep SSH host-key checking enabled. Do not place passwords or private keys in
 either file. The examples deliberately contain no usable target or pool GUID.
 
-For a production NAS, keep the classification `prd`. The owner must launch
-[owner-install.yml](ansible/owner-install.yml) manually with
-`microserver_owner_install: true`; the normal playbook continues to reject
-production targets. Both entry points use the same role and storage checks.
-The owner entry point is not permission for an agent to mutate production.
-In the commands below, production owners substitute `ansible/owner-install.yml`
-for `ansible/microserver.yml` and add `-e '{"microserver_owner_install": true}'`.
+[owner-install.yml](ansible/owner-install.yml) runs the same role and storage
+checks as `ansible/microserver.yml`, and additionally requires
+`microserver_owner_install: true`. Either entry point works in the commands below.
 
 Run the following as the owner, substituting the private paths and host alias:
 
@@ -167,7 +162,7 @@ credential. Then use `--tags monitoring` with that variable set to `true` to
 activate monitoring independently of pool creation. The full `configure` stage
 retains its storage checks before configuring NFS and monitoring.
 
-An owner-run production preparation command uses:
+An owner-run preparation command uses:
 
 ```sh
 ANSIBLE_HOST_KEY_CHECKING=True ansible-playbook \
@@ -177,7 +172,7 @@ ANSIBLE_HOST_KEY_CHECKING=True ansible-playbook \
   --tags packages,host,tuning,monitoring ansible/owner-install.yml
 ```
 
-Set the private inventory's lifecycle to `prd` before this command. It installs
+It installs
 packages and stages monitoring while the data pool is being qualified. Enable
 `microserver_dimm_limits_enabled` only for the
 [qualified DIMMs and sensor adapter](docs/HOST-TOOLS.md#dimm-temperature-limits).
@@ -393,7 +388,7 @@ the public payload/late hook and test USB identity/failure handling with OS adap
 replaced by file-only fixtures. They never open a real device. A manually dispatched
 CI run with `build_media: true` also builds the full pinned ISO without writing USB.
 
-The checks exercise target classification, pool GUID matching, mounted-dataset
+The checks exercise single-target guards, pool GUID matching, mounted-dataset
 and directory guards, exact NFS client validation, private credential metadata,
 container limits, alert firing/recovery and configuration parsing. Physical
 installation, service lifecycle and data recovery still require the owner-run

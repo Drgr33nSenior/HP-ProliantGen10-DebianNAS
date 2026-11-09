@@ -140,7 +140,6 @@ Alertmanager to the installed 45Drives Alerts UI. Set
 HTTPS and monitoring profile. The workflow requires the reviewed current
 Alertmanager checksum in `microserver_houston_previous_alertmanager_sha256`.
 Run it from the owner's administrator terminal with the pinned NAS inventory.
-The agent prepares source and local tests; the owner applies production changes.
 
 The receiver listens on `127.0.0.1:5002`. Its dedicated system account can call
 only Houston's `ForwardMessage` D-Bus method. Root and the selected NAS

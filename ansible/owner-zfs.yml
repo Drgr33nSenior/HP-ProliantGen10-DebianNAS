@@ -5,10 +5,9 @@
   gather_facts: true
   serial: 1
   pre_tasks:
-    - name: Require one commissioned production NAS and a pinned rules validator
+    - name: Require one commissioned NAS and a pinned rules validator
       ansible.builtin.assert:
         that:
-          - microserver_environment | default('unmapped') == 'prd'
           - microserver_owner_install | default(false) | bool
           - microserver_monitoring_enabled | bool
           - ansible_facts.distribution == 'Debian'

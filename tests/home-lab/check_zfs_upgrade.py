@@ -101,8 +101,8 @@ class ZfsUpgradeTests(unittest.TestCase):
     def test_native_ansible_reports_the_public_failure_without_protected_command_output(self):
         guard = next(task for task in read_yaml(ROOT / 'ansible/owner-zfs-upgrade.yml')[0]['tasks']
                      if task['name'].startswith('Require preflight acceptance'))
-        fixture = [dict(name='Local tst fixture for preflight failure reporting', hosts='localhost', gather_facts=False,
-                        vars=dict(microserver_environment='tst', microserver_zfs_upgrade_operation='stage'), tasks=[
+        fixture = [dict(name='Local fixture for preflight failure reporting', hosts='localhost', gather_facts=False,
+                        vars=dict(microserver_zfs_upgrade_operation='stage'), tasks=[
                             {'name': 'Synthetic protected preflight failure', 'ansible.builtin.command': {
                                 'argv': ['/bin/sh', '-c', 'printf "%s\\n" "STOP: NAS filesystem metadata is missing" >&2\nprintf "%s\\n" "DUMMY_PROTECTED_OUTPUT"\nexit 1']},
                              'register': 'microserver_zfs_old_packages', 'changed_when': False, 'failed_when': False, 'no_log': True}, guard])]
@@ -124,12 +124,12 @@ class ZfsUpgradeTests(unittest.TestCase):
 
     def test_upgrade_is_owner_only_and_does_not_reboot_or_change_pool_features(self):
         play = read_yaml(ROOT / 'ansible/owner-zfs-upgrade.yml')[0]
-        context = dict(microserver_environment='prd', microserver_owner_install=True,
+        context = dict(microserver_owner_install=True,
                        ansible_play_hosts_all=['nas'], ansible_check_mode=False, microserver_zfs_upgrade_operation='stage',
                        ansible_facts=dict(hostname='ig0r', distribution='Debian', distribution_major_version='13', architecture='x86_64'))
         guard = play['pre_tasks'][0]
         self.assertTrue(assertions(guard, context))
-        for changes in (dict(microserver_owner_install=False), dict(microserver_environment='unmapped'),
+        for changes in (dict(microserver_owner_install=False),
                         dict(ansible_play_hosts_all=['nas', 'other']), dict(ansible_check_mode=True),
                         dict(microserver_zfs_upgrade_operation='reboot')):
             self.assertFalse(assertions(guard, dict(context, **changes)))

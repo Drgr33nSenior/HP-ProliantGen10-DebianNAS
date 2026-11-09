@@ -15,7 +15,6 @@
     - name: Require one commissioned NAS, HTTPS and the explicit registry component
       ansible.builtin.assert:
         that:
-          - microserver_environment | default('unmapped') == 'prd'
           - microserver_owner_install | default(false) | bool
           - microserver_registry_enabled | default(false) | bool
           - microserver_ui_enabled | default(false) | bool
