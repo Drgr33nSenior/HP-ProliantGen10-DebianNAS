@@ -133,3 +133,34 @@ groups:
         annotations:
           summary: 'The model gateway reports itself unavailable'
           description: 'Inspect the gateway boundary status and its SGLang upstream before clients retry.'
+      # Assistant tools (service-tools /metrics, job assistant-tools). These
+      # count tool outcomes only; a successful tool call is not task success.
+      - record: workstation:assistant_retrieval_error_ratio:rate15m
+        expr: 'sum by (job, instance) (rate(workstation_assistant_retrieval_requests_total{job="assistant-tools",outcome=~"error|unavailable"}[15m])) / sum by (job, instance) (rate(workstation_assistant_retrieval_requests_total{job="assistant-tools"}[15m]))'
+      - alert: WorkstationAssistantRetrievalErrors
+        expr: 'workstation:assistant_retrieval_error_ratio:rate15m > 0.2 and on(job, instance) sum by (job, instance) (increase(workstation_assistant_retrieval_requests_total{job="assistant-tools"}[15m])) >= 5'
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 'More than 20% of retrieval tool calls failed over 15 minutes'
+          description: 'Tool failures only; no_evidence and denied are not counted. Check the retrieval backend and reranker before trusting answers that cite project documents.'
+      - alert: WorkstationAssistantRerankerNotActive
+        expr: 'max by (job, instance, state) (workstation_assistant_reranker_state{job="assistant-tools",state=~"missing_assets|incompatible|unknown"}) == 1'
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Retrieval is running without its configured reranker'
+          description: 'Results are ranked by the first-stage score only. Restore the reranker assets or select a profile that disables it explicitly.'
+      - alert: WorkstationAssistantHandoffConflicts
+        expr: 'sum by (job, instance) (increase(workstation_assistant_handoff_operations_total{job="assistant-tools",op="save",outcome="conflict"}[30m])) > 5'
+        labels: {severity: info}
+        annotations:
+          summary: 'Several task handoff saves were refused as stale (informational)'
+          description: 'A conflict is the designed refusal of a save based on an older revision; nothing was overwritten. Repeated conflicts suggest two sessions writing the same task.'
+      - alert: WorkstationAssistantServingContractIncomplete
+        expr: 'max by (job, instance, contract) (workstation_assistant_serving_contract_info{job="assistant-tools",status="incomplete"}) == 1'
+        for: 10m
+        labels: {severity: info}
+        annotations:
+          summary: 'Assistant clients are rendered for an incomplete serving contract (informational)'
+          description: 'The service render listed missing inputs in evidence.json; do not treat the assistant model route as qualified.'
