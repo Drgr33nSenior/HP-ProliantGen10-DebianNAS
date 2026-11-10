@@ -139,7 +139,8 @@ ansible-playbook -i /path/to/private/inventory.ini --limit nas \
   ansible/owner-workstation.yml
 ```
 
-The component adds 23 workstation recording and alert rules, including build-pipeline, serving and gateway alerts. Host queries use
+The component adds 28 workstation recording and alert rules, including build-pipeline, serving, gateway and
+assistant-tool alerts. Host queries use
 `job="node"`; NAS host metrics use `job="microserver-node"`. This separation
 lets a missing workstation trigger its availability alert even while the NAS
 continues reporting healthy memory metrics. Rule evaluation failures are
@@ -198,6 +199,38 @@ After correcting a verification failure, the owner can add
 retains the target, path and dashboard file checks, updates only the two validator
 scripts, and verifies the database metadata and evaluated rules. It does not
 install rules, change Compose or Prometheus configuration, or restart services.
+
+## Assistant tool metrics
+
+Workstation Alloy scrapes the assistant `service-tools` process at
+`service-tools.ai-home-lab.svc:8000/metrics` as `job="assistant-tools"` and
+writes the samples through the receiver like other workstation metrics. Every
+label comes from a fixed vocabulary, so request text, URLs, passages and user,
+project or session identifiers never become labels. The families count tool
+outcomes; a successful tool call is not evidence that the user's task
+succeeded, and no panel or rule presents it that way.
+
+The **Workstation / Workloads & serving** dashboard (`workstation-workloads`)
+has an **Assistant tools** row: the serving contract the clients were rendered
+for, reranker state, the retrieval error ratio, retrieval outcomes and latency,
+web/handoff/memory operations, and retrieval without the configured reranker.
+The workstation repository keeps a byte-identical copy of this dashboard for its
+local Grafana; change both together.
+
+The workstation rules add five assistant entries:
+
+| Rule | Severity | Fires when |
+| --- | --- | --- |
+| `workstation:assistant_retrieval_error_ratio:rate15m` | recording | Share of retrieval calls ending in `error` or `unavailable` |
+| `WorkstationAssistantRetrievalErrors` | warning | That share exceeds 20% with at least 5 calls in 15 minutes, for 10 minutes |
+| `WorkstationAssistantRerankerNotActive` | warning | The reranker reports `missing_assets`, `incompatible` or `unknown` for 15 minutes; `disabled` is a profile choice and does not fire |
+| `WorkstationAssistantHandoffConflicts` | info | More than 5 handoff saves were refused as stale in 30 minutes |
+| `WorkstationAssistantServingContractIncomplete` | info | Clients have been rendered for an incomplete serving contract for 10 minutes |
+
+The rules see data only after the workstation renders service-tools with the
+metrics route and the collector policy that admits Alloy to port 8000. Until
+then the panels show their no-value text and the rules stay inactive. Load the
+rules and dashboard with the `ansible/owner-workstation.yml` component above.
 
 ## Recover from a failed receiver apply
 

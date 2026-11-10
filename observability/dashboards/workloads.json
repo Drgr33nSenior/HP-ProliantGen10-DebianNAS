@@ -1981,6 +1981,467 @@
         "graphMode": "none",
         "justifyMode": "auto"
       }
+    },
+    {
+      "id": 94,
+      "type": "row",
+      "title": "Assistant tools \u00b7 tool outcomes, not task success",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 91,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 32,
+      "title": "Serving contract rendered for clients",
+      "type": "stat",
+      "description": "Contract identity (profile.arm) and status the gateway, Open WebUI and coding clients were rendered from (service render --serving-profile). Configuration only: it does not show that the server runs this arm. Incomplete means the render listed missing inputs; provisional means it is not yet qualified or promoted.",
+      "gridPos": {
+        "x": 0,
+        "y": 92,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (contract, status) (workstation_assistant_serving_contract_info{job=\"assistant-tools\"}) == 1",
+          "legendFormat": "{{contract}} \u00b7 {{status}}",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No contract rendered",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Current",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 33,
+      "title": "Retrieval reranker state",
+      "type": "stat",
+      "description": "Configured reranker state reported by service-tools. disabled is a profile choice; missing_assets, incompatible or unknown mean retrieval runs without the configured reranker.",
+      "gridPos": {
+        "x": 8,
+        "y": 92,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (state) (workstation_assistant_reranker_state{job=\"assistant-tools\"}) == 1",
+          "legendFormat": "{{state}}",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Current",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 34,
+      "title": "Retrieval tool errors \u00b7 15 min ratio",
+      "type": "stat",
+      "description": "Share of retrieval tool calls that ended in error or unavailable over 15 minutes. no_evidence and denied are not errors. A low ratio is tool health, not answer quality.",
+      "gridPos": {
+        "x": 16,
+        "y": 92,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(workstation_assistant_retrieval_requests_total{job=\"assistant-tools\",outcome=~\"error|unavailable\"}[15m])) / sum(rate(workstation_assistant_retrieval_requests_total{job=\"assistant-tools\"}[15m]))",
+          "legendFormat": "error ratio",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 35,
+      "title": "Retrieval tool calls by outcome",
+      "type": "timeseries",
+      "description": "Retrieval tool calls per second by fixed outcome. evidence means passages were returned; it does not mean the answer was correct or the user's task succeeded.",
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (client, outcome) (rate(workstation_assistant_retrieval_requests_total{job=\"assistant-tools\"}[$__rate_interval]))",
+          "legendFormat": "{{client}} \u00b7 {{outcome}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 36,
+      "title": "Retrieval tool latency \u00b7 p50 / p95",
+      "type": "timeseries",
+      "description": "Retrieval tool duration including reranking and permitted expansion, from the bounded histogram.",
+      "gridPos": {
+        "x": 12,
+        "y": 96,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(workstation_assistant_retrieval_duration_seconds_bucket{job=\"assistant-tools\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(workstation_assistant_retrieval_duration_seconds_bucket{job=\"assistant-tools\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 37,
+      "title": "Web, handoff and memory tool operations",
+      "type": "timeseries",
+      "description": "Operations per second by tool and fixed outcome. ok is a completed tool call; a handoff conflict is a refused stale save, shown so it can be retried, not lost work.",
+      "gridPos": {
+        "x": 0,
+        "y": 103,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tool, outcome) (rate(workstation_assistant_web_requests_total{job=\"assistant-tools\"}[$__rate_interval]))",
+          "legendFormat": "web {{tool}} \u00b7 {{outcome}}",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (op, outcome) (rate(workstation_assistant_handoff_operations_total{job=\"assistant-tools\"}[$__rate_interval]))",
+          "legendFormat": "handoff {{op}} \u00b7 {{outcome}}",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (op, outcome) (rate(workstation_assistant_memory_operations_total{job=\"assistant-tools\"}[$__rate_interval]))",
+          "legendFormat": "memory {{op}} \u00b7 {{outcome}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 38,
+      "title": "Retrieval without the configured reranker",
+      "type": "timeseries",
+      "description": "Retrieval calls answered without the configured reranker, by reason. Results are still returned but ranked by the first-stage score.",
+      "gridPos": {
+        "x": 12,
+        "y": 103,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate(workstation_assistant_reranker_fallback_total{job=\"assistant-tools\"}[$__rate_interval]))",
+          "legendFormat": "{{reason}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ]
 }

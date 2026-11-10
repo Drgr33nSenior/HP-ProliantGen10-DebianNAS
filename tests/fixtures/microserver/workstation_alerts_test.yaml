@@ -268,3 +268,101 @@ tests:
           severity: warning
         exp_annotations:
           summary: An expected workstation telemetry target is unavailable
+  - name: Retrieval tool failures alert only above the error ratio and volume floor
+    interval: 1m
+    input_series:
+    - series: workstation_assistant_retrieval_requests_total{job="assistant-tools",instance="failing",client="mcp",outcome="error"}
+      values: '0+3x40'
+    - series: workstation_assistant_retrieval_requests_total{job="assistant-tools",instance="failing",client="mcp",outcome="evidence"}
+      values: '0+1x40'
+    - series: workstation_assistant_retrieval_requests_total{job="assistant-tools",instance="healthy",client="webui",outcome="error"}
+      values: '0x40'
+    - series: workstation_assistant_retrieval_requests_total{job="assistant-tools",instance="healthy",client="webui",outcome="no_evidence"}
+      values: '0+4x40'
+    alert_rule_test:
+    - eval_time: 5m
+      alertname: WorkstationAssistantRetrievalErrors
+      exp_alerts: []
+    - eval_time: 20m
+      alertname: WorkstationAssistantRetrievalErrors
+      exp_alerts:
+      - exp_labels:
+          job: assistant-tools
+          instance: failing
+          severity: warning
+        exp_annotations:
+          summary: More than 20% of retrieval tool calls failed over 15 minutes
+          description: Tool failures only; no_evidence and denied are not counted. Check the retrieval backend and reranker before trusting answers that cite project documents.
+    promql_expr_test:
+    - expr: workstation:assistant_retrieval_error_ratio:rate15m{instance="healthy"}
+      eval_time: 20m
+      exp_samples:
+      - labels: 'workstation:assistant_retrieval_error_ratio:rate15m{job="assistant-tools",instance="healthy"}'
+        value: 0
+  - name: A missing reranker alerts; a profile that disables it does not
+    interval: 1m
+    input_series:
+    - series: workstation_assistant_reranker_state{job="assistant-tools",instance="missing",state="missing_assets"}
+      values: 1x30
+    - series: workstation_assistant_reranker_state{job="assistant-tools",instance="missing",state="active"}
+      values: '0x30'
+    - series: workstation_assistant_reranker_state{job="assistant-tools",instance="disabled",state="disabled"}
+      values: 1x30
+    alert_rule_test:
+    - eval_time: 10m
+      alertname: WorkstationAssistantRerankerNotActive
+      exp_alerts: []
+    - eval_time: 20m
+      alertname: WorkstationAssistantRerankerNotActive
+      exp_alerts:
+      - exp_labels:
+          job: assistant-tools
+          instance: missing
+          state: missing_assets
+          severity: warning
+        exp_annotations:
+          summary: Retrieval is running without its configured reranker
+          description: Results are ranked by the first-stage score only. Restore the reranker assets or select a profile that disables it explicitly.
+  - name: Repeated stale handoff saves are informational
+    interval: 1m
+    input_series:
+    - series: workstation_assistant_handoff_operations_total{job="assistant-tools",instance="tools",client="mcp",op="save",outcome="conflict"}
+      values: '0+2x40'
+    - series: workstation_assistant_handoff_operations_total{job="assistant-tools",instance="tools",client="mcp",op="save",outcome="ok"}
+      values: '0+10x40'
+    alert_rule_test:
+    - eval_time: 2m
+      alertname: WorkstationAssistantHandoffConflicts
+      exp_alerts: []
+    - eval_time: 10m
+      alertname: WorkstationAssistantHandoffConflicts
+      exp_alerts:
+      - exp_labels:
+          job: assistant-tools
+          instance: tools
+          severity: info
+        exp_annotations:
+          summary: Several task handoff saves were refused as stale (informational)
+          description: A conflict is the designed refusal of a save based on an older revision; nothing was overwritten. Repeated conflicts suggest two sessions writing the same task.
+  - name: An incomplete serving contract is reported; an active one is not
+    interval: 1m
+    input_series:
+    - series: workstation_assistant_serving_contract_info{job="assistant-tools",instance="incomplete",contract="qwen3.8-27b-mxfp4-tp2.Y",status="incomplete"}
+      values: 1x20
+    - series: workstation_assistant_serving_contract_info{job="assistant-tools",instance="active",contract="qwen3.8-27b-mxfp4-tp2.Y",status="active"}
+      values: 1x20
+    alert_rule_test:
+    - eval_time: 5m
+      alertname: WorkstationAssistantServingContractIncomplete
+      exp_alerts: []
+    - eval_time: 15m
+      alertname: WorkstationAssistantServingContractIncomplete
+      exp_alerts:
+      - exp_labels:
+          job: assistant-tools
+          instance: incomplete
+          contract: qwen3.8-27b-mxfp4-tp2.Y
+          severity: info
+        exp_annotations:
+          summary: Assistant clients are rendered for an incomplete serving contract (informational)
+          description: The service render listed missing inputs in evidence.json; do not treat the assistant model route as qualified.

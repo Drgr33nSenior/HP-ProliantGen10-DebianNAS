@@ -85,9 +85,15 @@ class WorkstationComponentTests(unittest.TestCase):
                   yaml.safe_load((fixtures.ROOT / 'tests/fixtures/microserver/workstation_alerts_test.yaml').read_text())['tests']}
         new = {'WorkstationAIStackStageFailed', 'WorkstationAIStackStageStuck', 'WorkstationServingKVPoolSaturated',
                'WorkstationServingRetracting', 'WorkstationServingSpeculativeAcceptanceLow',
-               'WorkstationServingTimeToFirstTokenSlow', 'WorkstationGatewayUnavailable'}
+               'WorkstationServingTimeToFirstTokenSlow', 'WorkstationGatewayUnavailable',
+               'WorkstationAssistantRetrievalErrors', 'WorkstationAssistantRerankerNotActive',
+               'WorkstationAssistantHandoffConflicts', 'WorkstationAssistantServingContractIncomplete'}
         self.assertLessEqual(new, names)
         self.assertLessEqual(new, tested)
+        # Assistant rules read only the bounded-label service-tools job.
+        for rule in rules:
+            if 'workstation_assistant_' in rule['expr']:
+                self.assertIn('job="assistant-tools"', rule['expr'])
         self.assertIn('WorkstationHostAlloyHeartbeatMissing', names)
         for rule in rules:
             if any(name in rule['expr'] for name in ['node_memory_', 'node_pressure_', 'node_filesystem_', 'workstation_gpu_', 'workstation_hardware_']):
