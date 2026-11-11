@@ -40,7 +40,7 @@ class TelemetryReceiverTests(unittest.TestCase):
         guard.require_receiver_services_only(before, after)
         guard.require_receiver_services_only(after, after)
         tempo = after['services']['tempo']
-        self.assertRegex(tempo['image'], r'^docker.io/grafana/tempo:3[.]0[.]3@sha256:[a-f0-9]{64}$')
+        self.assertRegex(tempo['image'], r'^docker.io/grafana/tempo:3[.]1[.]1@sha256:[a-f0-9]{64}$')
         self.assertEqual(tempo['user'], '10001:10001')
         self.assertTrue(tempo['read_only'])
         self.assertEqual(tempo['cap_drop'], ['ALL'])

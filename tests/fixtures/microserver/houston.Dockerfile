@@ -1,5 +1,5 @@
 # Owned local tst fixture. Supply only the reviewed public helpers and fixed DEB.
-FROM docker.io/prom/alertmanager:v0.34.1@sha256:84967b9b7ba45e38a9278d3e594305f43d4993c310df3905b51138b816c365f3 AS alertmanager
+FROM docker.io/prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c AS alertmanager
 FROM docker.io/library/python:3.13-slim-trixie@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc
 RUN apt-get update && apt-get install -y --no-install-recommends python3-dbus python3-gi python3-requests dbus-daemon dbus-system-bus-common && rm -rf /var/lib/apt/lists/*
 COPY cockpit-alerts.deb /fixture.deb
