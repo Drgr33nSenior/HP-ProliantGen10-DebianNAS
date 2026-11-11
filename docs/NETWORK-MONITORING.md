@@ -24,7 +24,7 @@ See [Grafana folder provisioning](https://grafana.com/docs/grafana/latest/admini
 
 ## Gateway performance collection
 
-UnPoller 5.9.3 is an MIT-licensed collector with a digest-pinned image. It polls
+UnPoller 5.9.5 is an MIT-licensed collector with a digest-pinned image. It polls
 every 60 seconds and exposes cached metrics only on `127.0.0.1:9130`. Its
 container uses a non-root UID, a read-only root, dropped capabilities, a 256 MiB
 memory ceiling and 0.1 CPU. With polling enabled, all six container ceilings
