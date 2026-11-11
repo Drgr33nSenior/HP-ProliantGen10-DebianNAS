@@ -134,6 +134,52 @@
     - /var/lib/microserver/node-exporter
     - /usr/local/libexec
 
+# Before the folder layout (dashboard-folders/, mounted into Grafana), dashboards were
+# copied flat into /etc/microserver/monitoring/dashboards. Nothing mounts or reads that
+# directory now; its stale copies only confuse inspection. Remove it only when it is a
+# real root-owned directory holding nothing but the retired dashboard files.
+- name: Inspect the retired flat dashboard directory
+  ansible.builtin.stat:
+    path: /etc/microserver/monitoring/dashboards
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_retired_dashboards
+
+- name: List the retired flat dashboard directory
+  ansible.builtin.find:
+    paths: /etc/microserver/monitoring/dashboards
+    file_type: any
+    hidden: true
+  register: microserver_retired_dashboard_files
+  when: microserver_retired_dashboards.stat.isdir | default(false) and not microserver_retired_dashboards.stat.islnk | default(false)
+
+- name: Decide whether the retired flat dashboard directory can be removed
+  ansible.builtin.set_fact:
+    microserver_retired_dashboards_removable: >-
+      {{ microserver_retired_dashboard_files is not skipped
+         and microserver_retired_dashboards.stat.uid == 0
+         and (microserver_retired_dashboard_files.files | rejectattr('isreg') | list | length == 0)
+         and ((microserver_retired_dashboard_files.files | map(attribute='path') | map('basename') | list)
+              is subset(['gpus.json', 'host.json', 'kubernetes.json', 'microserver.json', 'monitoring.json',
+                         'pods.json', 'power.json', 'unifi-logs.json', 'workloads.json', 'workstation.json'])) }}
+  when: microserver_retired_dashboards.stat.exists | default(false)
+
+- name: Remove the retired flat dashboard directory when it holds only retired copies
+  ansible.builtin.file:
+    path: /etc/microserver/monitoring/dashboards
+    state: absent
+  when: microserver_retired_dashboards_removable | default(false) | bool
+
+- name: Report a retired dashboard directory left in place
+  ansible.builtin.debug:
+    msg: >-
+      /etc/microserver/monitoring/dashboards is not a root-owned directory of retired dashboard
+      copies, so it was left in place; inspect it by hand. Grafana does not read it.
+  when:
+    - microserver_retired_dashboards.stat.exists | default(false)
+    - not (microserver_retired_dashboards_removable | default(false) | bool)
+
 - name: Keep private credential preparation local to the owner
   ansible.builtin.file:
     path: /etc/microserver/private
