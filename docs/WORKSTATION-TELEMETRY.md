@@ -139,7 +139,7 @@ ansible-playbook -i /path/to/private/inventory.ini --limit nas \
   ansible/owner-workstation.yml
 ```
 
-The component adds 40 workstation recording and alert rules, including build-pipeline, serving, gateway,
+The component adds 41 workstation recording and alert rules, including build-pipeline, serving, gateway,
 assistant-tool and host-maintenance alerts. Host queries use
 `job="node"`; NAS host metrics use `job="microserver-node"`. This separation
 lets a missing workstation trigger its availability alert even while the NAS

@@ -466,3 +466,21 @@ tests:
         exp_annotations:
           summary: A host maintenance job failed on its last run
           description: 'The task label names the unit (journalctl -u <task>); previous reports are retained.'
+  - name: A new unclean power loss on one drive warns; a steady historical count is quiet
+    interval: 10m
+    input_series:
+      - series: workstation_nvme_unsafe_shutdowns{job="node",instance="ws",device="nvme0",serial="S7A"}
+        values: '33+0x5 34+0x10'
+      - series: workstation_nvme_unsafe_shutdowns{job="node",instance="ws",device="nvme1",serial="S7B"}
+        values: '33+0x15'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: WorkstationSSDUncleanShutdown
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: WorkstationSSDUncleanShutdown
+        exp_alerts:
+          - exp_labels: {job: node, instance: ws, device: nvme0, serial: S7A, severity: warning}
+            exp_annotations:
+              summary: 'An NVMe drive lost power without a clean shutdown'
+              description: 'The RAID0 root array was cut off mid-write: check the previous boot ended with systemd shutting down (journalctl -b -1), the power supply and how the host was turned off.'
