@@ -923,6 +923,137 @@
       }
     },
     {
+      "id": 95,
+      "title": "Prefix-cache reuse \u00b7 by server",
+      "type": "timeseries",
+      "description": "Share of prompt tokens served from the radix (prefix) cache over the trailing hour, per server role: family is the chat service; bench, qualify and capture are AI-stack Jobs, whose prompts are deliberately fresh. 0 means prompts arrived but none reused the cache; a gap means no prompts in that hour. Series from before 2026-11-12 carry no server label.",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (server) (increase(sglang:cached_tokens_total{job=\"sglang\"}[1h])) or sum by (server) (increase(sglang:prompt_tokens_total{job=\"sglang\"}[1h])) * 0) / (sum by (server) (increase(sglang:prompt_tokens_total{job=\"sglang\"}[1h])) > 0)",
+          "legendFormat": "{{server}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 96,
+      "title": "Family prompt tokens per hour \u00b7 computed vs reused",
+      "type": "timeseries",
+      "description": "Prompt tokens of the family chat service over the trailing hour, split into tokens the server had to compute (prefill) and tokens reused from the prefix cache. Reuse is what keeps long multi-turn conversations responsive.",
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(sglang:prompt_tokens_total{job=\"sglang\",server=\"family\"}[1h])) - (sum(increase(sglang:cached_tokens_total{job=\"sglang\",server=\"family\"}[1h])) or vector(0))",
+          "legendFormat": "computed",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(sglang:cached_tokens_total{job=\"sglang\",server=\"family\"}[1h])) or sum(increase(sglang:prompt_tokens_total{job=\"sglang\",server=\"family\"}[1h])) * 0",
+          "legendFormat": "reused from cache",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 91,
       "type": "row",
       "title": "Gateway and service requests",
@@ -930,7 +1061,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 36,
+        "y": 43,
         "w": 24,
         "h": 1
       }
@@ -942,7 +1073,7 @@
       "description": "Gateway boundary phase from its fixed-label metrics endpoint. Unavailable means the gateway is not reachable or not deployed.",
       "gridPos": {
         "x": 0,
-        "y": 37,
+        "y": 44,
         "w": 8,
         "h": 4
       },
@@ -1005,7 +1136,7 @@
       "description": "Requests currently inside the gateway boundary.",
       "gridPos": {
         "x": 8,
-        "y": 37,
+        "y": 44,
         "w": 8,
         "h": 4
       },
@@ -1057,7 +1188,7 @@
       "description": "Age of the oldest in-flight request; a growing value means a stuck or very long request.",
       "gridPos": {
         "x": 16,
-        "y": 37,
+        "y": 44,
         "w": 8,
         "h": 4
       },
@@ -1109,7 +1240,7 @@
       "description": "Requests finished by the gateway boundary per second, by fixed result class.",
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 48,
         "w": 12,
         "h": 7
       },
@@ -1171,7 +1302,7 @@
       "description": "HTTP requests per second for ai-home-lab services, measured by the host-wide eBPF collector without application changes. Empty unless TELEMETRY_EBPF is enabled.",
       "gridPos": {
         "x": 12,
-        "y": 41,
+        "y": 48,
         "w": 12,
         "h": 7
       },
@@ -1233,7 +1364,7 @@
       "description": "95th percentile HTTP server duration per ai-home-lab service, from the eBPF collector. Streaming responses count until the stream ends.",
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 55,
         "w": 24,
         "h": 7
       },
@@ -1296,7 +1427,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 55,
+        "y": 62,
         "w": 24,
         "h": 1
       }
@@ -1308,7 +1439,7 @@
       "description": "Actual container memory working set, not its reservation.",
       "gridPos": {
         "x": 0,
-        "y": 56,
+        "y": 63,
         "w": 12,
         "h": 7
       },
@@ -1369,7 +1500,7 @@
       "description": "1.0 means one logical CPU core of execution time.",
       "gridPos": {
         "x": 12,
-        "y": 56,
+        "y": 63,
         "w": 12,
         "h": 7
       },
@@ -1430,7 +1561,7 @@
       "description": "Configured budgets, not actual usage. Terminal historical Pods can still appear in kube-state-metrics.",
       "gridPos": {
         "x": 0,
-        "y": 63,
+        "y": 70,
         "w": 12,
         "h": 7
       },
@@ -1498,7 +1629,7 @@
       "description": "Fraction of CFS periods throttled. Missing or zero-denominator data is unavailable, not zero throttling.",
       "gridPos": {
         "x": 12,
-        "y": 63,
+        "y": 70,
         "w": 12,
         "h": 7
       },
@@ -1559,7 +1690,7 @@
       "description": "Counter increases over the selected time window, not total lifetime restarts.",
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 77,
         "w": 12,
         "h": 7
       },
@@ -1620,7 +1751,7 @@
       "description": "Includes retained Succeeded/Failed experiment Pods as well as currently running Pods.",
       "gridPos": {
         "x": 12,
-        "y": 70,
+        "y": 77,
         "w": 12,
         "h": 7
       },
@@ -1666,7 +1797,7 @@
       "description": "Busiest card's compute activity for each pod holding GPUs. Attributed by AMD's device metrics exporter through the kubelet pod-resources API, so only pods that requested amd.com/gpu appear.",
       "gridPos": {
         "x": 0,
-        "y": 77,
+        "y": 84,
         "w": 12,
         "h": 7
       },
@@ -1729,7 +1860,7 @@
       "description": "VRAM in use across the cards each pod holds, in MiB as reported by AMD-SMI. Attributed by AMD's device metrics exporter through the kubelet pod-resources API, so only pods that requested amd.com/gpu appear.",
       "gridPos": {
         "x": 12,
-        "y": 77,
+        "y": 84,
         "w": 12,
         "h": 7
       },
@@ -1792,7 +1923,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 84,
+        "y": 91,
         "w": 24,
         "h": 1
       }
@@ -1804,7 +1935,7 @@
       "description": "Current state of each AI-stack pipeline stage: building, or the result of its last run.",
       "gridPos": {
         "x": 0,
-        "y": 85,
+        "y": 92,
         "w": 8,
         "h": 6
       },
@@ -1875,7 +2006,7 @@
       "description": "Wall-clock duration of each stage's most recent run.",
       "gridPos": {
         "x": 8,
-        "y": 85,
+        "y": 92,
         "w": 8,
         "h": 6
       },
@@ -1935,7 +2066,7 @@
       "description": "Share of compilations served from ccache in each stage's last run. A low ratio after a small upstream change means the cache is not being reused.",
       "gridPos": {
         "x": 16,
-        "y": 85,
+        "y": 92,
         "w": 8,
         "h": 6
       },
@@ -1990,7 +2121,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 91,
+        "y": 98,
         "w": 24,
         "h": 1
       }
@@ -2002,7 +2133,7 @@
       "description": "Contract identity (profile.arm) and status the gateway, Open WebUI and coding clients were rendered from (service render --serving-profile). Configuration only: it does not show that the server runs this arm. Incomplete means the render listed missing inputs; provisional means it is not yet qualified or promoted.",
       "gridPos": {
         "x": 0,
-        "y": 92,
+        "y": 99,
         "w": 8,
         "h": 4
       },
@@ -2065,7 +2196,7 @@
       "description": "Configured reranker state reported by service-tools. disabled is a profile choice; missing_assets, incompatible or unknown mean retrieval runs without the configured reranker.",
       "gridPos": {
         "x": 8,
-        "y": 92,
+        "y": 99,
         "w": 8,
         "h": 4
       },
@@ -2128,7 +2259,7 @@
       "description": "Share of retrieval tool calls that ended in error or unavailable over 15 minutes. no_evidence and denied are not errors. A low ratio is tool health, not answer quality.",
       "gridPos": {
         "x": 16,
-        "y": 92,
+        "y": 99,
         "w": 8,
         "h": 4
       },
@@ -2181,7 +2312,7 @@
       "description": "Retrieval tool calls per second by fixed outcome. evidence means passages were returned; it does not mean the answer was correct or the user's task succeeded.",
       "gridPos": {
         "x": 0,
-        "y": 96,
+        "y": 103,
         "w": 12,
         "h": 7
       },
@@ -2243,7 +2374,7 @@
       "description": "Retrieval tool duration including reranking and permitted expansion, from the bounded histogram.",
       "gridPos": {
         "x": 12,
-        "y": 96,
+        "y": 103,
         "w": 12,
         "h": 7
       },
@@ -2312,7 +2443,7 @@
       "description": "Operations per second by tool and fixed outcome. ok is a completed tool call; a handoff conflict is a refused stale save, shown so it can be retried, not lost work.",
       "gridPos": {
         "x": 0,
-        "y": 103,
+        "y": 110,
         "w": 12,
         "h": 7
       },
@@ -2388,7 +2519,7 @@
       "description": "Retrieval calls answered without the configured reranker, by reason. Results are still returned but ranked by the first-stage score.",
       "gridPos": {
         "x": 12,
-        "y": 103,
+        "y": 110,
         "w": 12,
         "h": 7
       },
@@ -2440,6 +2571,270 @@
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 97,
+      "title": "Embedding queue",
+      "type": "stat",
+      "description": "Requests waiting in the TEI embedding queue (Graphiti memory). Sustained values above a few mean the 4-CPU service is saturated.",
+      "gridPos": {
+        "x": 0,
+        "y": 117,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(te_queue_size{job=\"embedding\"})",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 98,
+      "title": "Embedding errors \u00b7 15 min ratio",
+      "type": "stat",
+      "description": "Share of embedding requests that did not succeed over 15 minutes (TEI request count minus successes). 429s from the 32-request cap count here.",
+      "gridPos": {
+        "x": 8,
+        "y": 117,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(te_request_count{job=\"embedding\"}[15m])) - sum(rate(te_request_success{job=\"embedding\"}[15m]))) / sum(rate(te_request_count{job=\"embedding\"}[15m]))",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 99,
+      "title": "Embedding CPU throttled \u00b7 15 min",
+      "type": "stat",
+      "description": "Share of CFS periods in which the embedding container hit its 4-CPU quota (cAdvisor). High values with a growing queue mean it needs more CPU, not more threads.",
+      "gridPos": {
+        "x": 16,
+        "y": 117,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_cfs_throttled_periods_total{namespace=\"ai-home-lab\",pod=~\"memory-embedding-.*\",container=\"embedding\"}[15m])) / sum(rate(container_cpu_cfs_periods_total{namespace=\"ai-home-lab\",pod=~\"memory-embedding-.*\",container=\"embedding\"}[15m]))",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 100,
+      "title": "Embedding throughput",
+      "type": "timeseries",
+      "description": "Embedding requests by kind (single text or batch) and the texts embedded per second.",
+      "gridPos": {
+        "x": 0,
+        "y": 121,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (method) (rate(te_request_count{job=\"embedding\"}[$__rate_interval]))",
+          "legendFormat": "requests \u00b7 {{method}}",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(te_embed_count{job=\"embedding\"}[$__rate_interval]))",
+          "legendFormat": "texts embedded",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 101,
+      "title": "Embedding latency \u00b7 p50 / p95",
+      "type": "timeseries",
+      "description": "Request latency, and the queue and inference parts of it. Queue time growing while inference time is flat means demand above capacity.",
+      "gridPos": {
+        "x": 12,
+        "y": 121,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(te_request_duration_bucket{job=\"embedding\"}[$__rate_interval])))",
+          "legendFormat": "total p50",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(te_request_duration_bucket{job=\"embedding\"}[$__rate_interval])))",
+          "legendFormat": "total p95",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(te_request_queue_duration_bucket{job=\"embedding\"}[$__rate_interval])))",
+          "legendFormat": "queue p95",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(te_request_inference_duration_bucket{job=\"embedding\"}[$__rate_interval])))",
+          "legendFormat": "inference p95",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
         }
       }
     }
