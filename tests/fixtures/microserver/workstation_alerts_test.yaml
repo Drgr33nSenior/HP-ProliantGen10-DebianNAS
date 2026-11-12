@@ -366,3 +366,103 @@ tests:
         exp_annotations:
           summary: Assistant clients are rendered for an incomplete serving contract (informational)
           description: The service render listed missing inputs in evidence.json; do not treat the assistant model route as qualified.
+  - name: A failing SSD self-assessment is critical; a healthy drive is quiet
+    interval: 1m
+    input_series:
+    - series: workstation_nvme_smart_passed{job="node",instance="ws",device="nvme0",serial="S7A"}
+      values: 1 1 0 0 0 0
+    - series: workstation_nvme_smart_passed{job="node",instance="ws",device="nvme1",serial="S7B"}
+      values: 1x5
+    - series: workstation_nvme_critical_warning{job="node",instance="ws",device="nvme1",serial="S7B"}
+      values: 0x5
+    alert_rule_test:
+    - eval_time: 1m
+      alertname: WorkstationSSDHealthFailing
+      exp_alerts: []
+    - eval_time: 4m
+      alertname: WorkstationSSDHealthFailing
+      exp_alerts:
+      - exp_labels:
+          job: node
+          instance: ws
+          device: nvme0
+          serial: S7A
+          severity: critical
+        exp_annotations:
+          summary: An NVMe drive fails its SMART self-assessment or reports a critical warning
+          description: 'Both drives form the RAID0 root array: check backups and smartctl -a on the workstation before any further writes.'
+  - name: The first uncorrected hardware error alerts; corrected ones only warn
+    interval: 1m
+    input_series:
+    - series: workstation_ras_events_recorded{job="node",instance="ws",table="mc_event",severity="uncorrected"}
+      values: 0 0 0 1 1 1
+    - series: workstation_ras_events_recorded{job="node",instance="ws",table="mc_event",severity="all"}
+      values: 0 0 0 1 1 1
+    - series: workstation_ras_events_recorded{job="node",instance="ws",table="aer_event",severity="corrected"}
+      values: 0x5
+    alert_rule_test:
+    - eval_time: 2m
+      alertname: WorkstationHardwareErrorsUncorrected
+      exp_alerts: []
+    - eval_time: 5m
+      alertname: WorkstationHardwareErrorsUncorrected
+      exp_alerts:
+      - exp_labels:
+          job: node
+          instance: ws
+          table: mc_event
+          severity: critical
+        exp_annotations:
+          summary: An uncorrected or fatal hardware error was recorded
+          description: Inspect ras-mc-ctl --errors and the kernel journal; automatic page offlining is disabled on this host.
+    - eval_time: 5m
+      alertname: WorkstationHardwareErrorsRecorded
+      exp_alerts:
+      - exp_labels:
+          job: node
+          instance: ws
+          table: mc_event
+          severity: warning
+        exp_annotations:
+          summary: rasdaemon or EDAC recorded a new hardware error (MCE, memory controller or PCIe AER)
+          description: Run ras-mc-ctl --summary and --errors on the workstation. Corrected errors are a trend to watch, not an outage.
+  - name: A failed advisory scan is never clean; a fresh successful one is quiet
+    interval: 1m
+    input_series:
+    - series: workstation_advisory_last_run_success{job="node",instance="ws"}
+      values: 1 1 1 0x20
+    - series: workstation_advisory_last_success_timestamp_seconds{job="node",instance="ws"}
+      values: 0x23
+    alert_rule_test:
+    - eval_time: 2m
+      alertname: WorkstationAdvisoryScanFailing
+      exp_alerts: []
+    - eval_time: 15m
+      alertname: WorkstationAdvisoryScanFailing
+      exp_alerts:
+      - exp_labels:
+          job: node
+          instance: ws
+          severity: warning
+        exp_annotations:
+          summary: The full security-advisory scan failed or has not succeeded for 3 days
+          description: A failed or stale scan is not a clean result; read advisories.json and the workstation-advisories journal.
+  - name: A failed maintenance job is reported by task, keeping the node job label
+    interval: 1m
+    input_series:
+    - series: workstation_maintenance_job_last_result{job="node",instance="ws",task="paccache"}
+      values: 0x5
+    - series: workstation_maintenance_job_last_result{job="node",instance="ws",task="fstrim"}
+      values: 1x5
+    alert_rule_test:
+    - eval_time: 2m
+      alertname: WorkstationMaintenanceJobFailed
+      exp_alerts:
+      - exp_labels:
+          job: node
+          instance: ws
+          task: paccache
+          severity: warning
+        exp_annotations:
+          summary: A host maintenance job failed on its last run
+          description: 'The task label names the unit (journalctl -u <task>); previous reports are retained.'

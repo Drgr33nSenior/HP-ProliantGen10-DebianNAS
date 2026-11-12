@@ -164,3 +164,83 @@ groups:
         annotations:
           summary: 'Assistant clients are rendered for an incomplete serving contract (informational)'
           description: 'The service render listed missing inputs in evidence.json; do not treat the assistant model route as qualified.'
+      # Host maintenance (workstation roles/host_maintenance, docs/HOST-MAINTENANCE.md).
+      # Textfile series from the node job; SMART is sampled every 10 minutes and
+      # rasdaemon counts are rows in its persistent database (gauges that only grow).
+      - alert: WorkstationSSDHealthFailing
+        expr: 'workstation_nvme_smart_passed{job="node"} == 0 or workstation_nvme_critical_warning{job="node"} > 0'
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: 'An NVMe drive fails its SMART self-assessment or reports a critical warning'
+          description: 'Both drives form the RAID0 root array: check backups and smartctl -a on the workstation before any further writes.'
+      - alert: WorkstationSSDErrorsIncreasing
+        expr: 'delta(workstation_nvme_media_errors{job="node"}[1h]) > 0 or delta(workstation_nvme_error_log_entries{job="node"}[1h]) > 0'
+        labels: {severity: warning}
+        annotations:
+          summary: 'An NVMe drive recorded new media errors or error-log entries'
+          description: 'Read smartctl -l error on the workstation and the smartd journal; some error-log entries are benign rejected commands.'
+      - alert: WorkstationSSDTemperatureHigh
+        expr: 'workstation_nvme_temperature_celsius{job="node"} >= 70'
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: 'An NVMe drive has been at or above 70 C for 15 minutes'
+          description: 'The drives throttle near their 84 C warning threshold; check airflow and sustained build or model-load I/O.'
+      - alert: WorkstationSSDTemperatureCritical
+        expr: 'workstation_nvme_temperature_celsius{job="node"} >= 80'
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: 'An NVMe drive has been at or above 80 C for 5 minutes'
+      - alert: WorkstationSSDWearHigh
+        expr: 'workstation_nvme_percentage_used{job="node"} >= 80 or workstation_nvme_available_spare_percent{job="node"} <= workstation_nvme_available_spare_threshold_percent{job="node"} + 10'
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: 'An NVMe drive is near its rated endurance or spare threshold'
+      - alert: WorkstationHardwareHealthSampleStale
+        expr: 'time() - workstation_maintenance_health_timestamp_seconds{job="node"} > 1800 or absent(workstation_maintenance_health_timestamp_seconds{job="node"}) or workstation_smart_device_up{job="node"} == 0'
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 'SMART and RAS sampling is missing, stale or cannot read a drive; missing data is not healthy data'
+          description: 'Check workstation-hardware-health.timer and its journal.'
+      - alert: WorkstationHardwareErrorsRecorded
+        expr: 'delta(workstation_ras_events_recorded{job="node",severity="all"}[1h]) > 0 or increase(node_edac_correctable_errors_total{job="node"}[1h]) > 0'
+        labels: {severity: warning}
+        annotations:
+          summary: 'rasdaemon or EDAC recorded a new hardware error (MCE, memory controller or PCIe AER)'
+          description: 'Run ras-mc-ctl --summary and --errors on the workstation. Corrected errors are a trend to watch, not an outage.'
+      - alert: WorkstationHardwareErrorsUncorrected
+        expr: 'delta(workstation_ras_events_recorded{job="node",severity=~"uncorrected|fatal"}[1h]) > 0 or increase(node_edac_uncorrectable_errors_total{job="node"}[1h]) > 0'
+        labels: {severity: critical}
+        annotations:
+          summary: 'An uncorrected or fatal hardware error was recorded'
+          description: 'Inspect ras-mc-ctl --errors and the kernel journal; automatic page offlining is disabled on this host.'
+      - alert: WorkstationMonitoringDaemonInactive
+        expr: 'workstation_maintenance_service_active{job="node"} == 0 or workstation_ras_database_readable{job="node"} == 0'
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: 'smartd, rasdaemon or a maintenance timer is inactive, or the RAS database is unreadable'
+      - alert: WorkstationAdvisoryScanFailing
+        expr: 'workstation_advisory_last_run_success{job="node"} == 0 or time() - workstation_advisory_last_success_timestamp_seconds{job="node"} > 259200 or absent(workstation_advisory_last_success_timestamp_seconds{job="node"})'
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 'The full security-advisory scan failed or has not succeeded for 3 days'
+          description: 'A failed or stale scan is not a clean result; read advisories.json and the workstation-advisories journal.'
+      - alert: WorkstationAdvisoryFixAvailable
+        expr: 'sum(workstation_advisory_findings{job="node",class=~"fix_in_configured_repo|fix_needs_snapshot_move"}) > 0'
+        for: 1h
+        labels: {severity: info}
+        annotations:
+          summary: 'An installed package has a security advisory with a recorded fix (informational)'
+          description: 'fix_needs_snapshot_move requires the reviewed full upgrade in the update plan; never partially upgrade.'
+      - alert: WorkstationMaintenanceJobFailed
+        expr: 'workstation_maintenance_job_last_result{job="node"} == 0'
+        labels: {severity: warning}
+        annotations:
+          summary: 'A host maintenance job failed on its last run'
+          description: 'The task label names the unit (journalctl -u <task>); previous reports are retained.'

@@ -139,8 +139,8 @@ ansible-playbook -i /path/to/private/inventory.ini --limit nas \
   ansible/owner-workstation.yml
 ```
 
-The component adds 28 workstation recording and alert rules, including build-pipeline, serving, gateway and
-assistant-tool alerts. Host queries use
+The component adds 40 workstation recording and alert rules, including build-pipeline, serving, gateway,
+assistant-tool and host-maintenance alerts. Host queries use
 `job="node"`; NAS host metrics use `job="microserver-node"`. This separation
 lets a missing workstation trigger its availability alert even while the NAS
 continues reporting healthy memory metrics. Rule evaluation failures are
@@ -231,6 +231,49 @@ The rules see data only after the workstation renders service-tools with the
 metrics route and the collector policy that admits Alloy to port 8000. Until
 then the panels show their no-value text and the rules stay inactive. Load the
 rules and dashboard with the `ansible/owner-workstation.yml` component above.
+
+## Host maintenance metrics
+
+The workstation's host maintenance jobs (its `docs/HOST-MAINTENANCE.md`) write
+node-exporter textfile series, so they arrive with `job="node"`: NVMe SMART
+health (`workstation_nvme_*`, `workstation_smart_*`), rows recorded by
+rasdaemon (`workstation_ras_events_recorded`), the full security-advisory scan
+(`workstation_advisory_*`, `workstation_update_pending_packages`), the
+report-only retention inventory (`workstation_retention_*`) and each job's last
+result and resource use (`workstation_maintenance_job_*`, labelled `task`, so the
+scrape's `job` label stays `node`). Labels are fixed vocabularies, drive
+serials, unit names and installed package names; no paths, CVE text or command
+output. Host Alloy also forwards classified smartd, rasdaemon and job-result
+lines as `job="workstation-maintenance"` streams with templated messages.
+
+The **Workstation / Host & storage** dashboard (`workstation-host`) has a
+**Maintenance & hardware health** row. Backup freshness reads
+`workstation_maintenance_backup_configured` as well as the backup success
+time, so a workstation without backups shows **Not configured** rather than an
+empty or healthy panel. The workstation repository keeps byte-identical copies
+of `host.json` and `monitoring.json`; change both together.
+
+The workstation rules add twelve maintenance entries:
+
+| Rule | Severity | Fires when |
+| --- | --- | --- |
+| `WorkstationSSDHealthFailing` | critical | A drive fails its SMART self-assessment or reports a critical warning |
+| `WorkstationSSDErrorsIncreasing` | warning | Media errors or error-log entries grew within an hour |
+| `WorkstationSSDTemperatureHigh` | warning | A drive is at or above 70 C for 15 minutes |
+| `WorkstationSSDTemperatureCritical` | critical | A drive is at or above 80 C for 5 minutes (its own warning threshold is 84 C) |
+| `WorkstationSSDWearHigh` | warning | 80% of rated endurance used, or spare within 10 points of its threshold |
+| `WorkstationHardwareHealthSampleStale` | warning | The SMART/RAS sampler is missing, older than 30 minutes or cannot read a drive |
+| `WorkstationHardwareErrorsRecorded` | warning | rasdaemon recorded a new event, or EDAC counted a corrected error |
+| `WorkstationHardwareErrorsUncorrected` | critical | An uncorrected or fatal event was recorded |
+| `WorkstationMonitoringDaemonInactive` | warning | smartd, rasdaemon or a maintenance timer is inactive, or the RAS database is unreadable, for 30 minutes |
+| `WorkstationAdvisoryScanFailing` | warning | The last advisory scan failed, or none succeeded for 3 days |
+| `WorkstationAdvisoryFixAvailable` | info | An installed package's advisory records a fixed version |
+| `WorkstationMaintenanceJobFailed` | warning | A maintenance job's last run failed |
+
+Alerts reach the existing Alertmanager, whose default receiver is local-only:
+they are visible in its UI but no notification is sent until the owner adds a
+reviewed receiver. Load the rules and dashboards with
+`ansible/owner-workstation.yml` as above.
 
 ## Recover from a failed receiver apply
 

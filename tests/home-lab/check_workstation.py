@@ -87,7 +87,9 @@ class WorkstationComponentTests(unittest.TestCase):
                'WorkstationServingRetracting', 'WorkstationServingSpeculativeAcceptanceLow',
                'WorkstationServingTimeToFirstTokenSlow', 'WorkstationGatewayUnavailable',
                'WorkstationAssistantRetrievalErrors', 'WorkstationAssistantRerankerNotActive',
-               'WorkstationAssistantHandoffConflicts', 'WorkstationAssistantServingContractIncomplete'}
+               'WorkstationAssistantHandoffConflicts', 'WorkstationAssistantServingContractIncomplete',
+               'WorkstationSSDHealthFailing', 'WorkstationHardwareErrorsUncorrected',
+               'WorkstationAdvisoryScanFailing', 'WorkstationMaintenanceJobFailed'}
         self.assertLessEqual(new, names)
         self.assertLessEqual(new, tested)
         # Assistant rules read only the bounded-label service-tools job.
@@ -96,7 +98,9 @@ class WorkstationComponentTests(unittest.TestCase):
                 self.assertIn('job="assistant-tools"', rule['expr'])
         self.assertIn('WorkstationHostAlloyHeartbeatMissing', names)
         for rule in rules:
-            if any(name in rule['expr'] for name in ['node_memory_', 'node_pressure_', 'node_filesystem_', 'workstation_gpu_', 'workstation_hardware_']):
+            if any(name in rule['expr'] for name in ['node_memory_', 'node_pressure_', 'node_filesystem_', 'node_edac_', 'workstation_gpu_',
+                                                     'workstation_hardware_', 'workstation_nvme_', 'workstation_ras_',
+                                                     'workstation_advisory_', 'workstation_maintenance_', 'workstation_smart_']):
                 self.assertIn('job="node"', rule['expr'])
         current = yaml.safe_load((fixtures.ROLE / 'files/alerts.yaml').read_text())
         self.assertEqual(current['groups'][0]['name'], 'microserver')
