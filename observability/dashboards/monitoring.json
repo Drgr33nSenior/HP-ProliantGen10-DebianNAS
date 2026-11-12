@@ -571,7 +571,7 @@
       "id": 10,
       "title": "Recent filtered operational logs",
       "type": "logs",
-      "description": "Only approved installer events and classified kernel warning/error messages. Empty results mean no matching collected events, not proof of error-free operation.",
+      "description": "Only approved installer events, classified kernel warning/error messages and host maintenance events (job results, smartd warnings, rasdaemon hardware events). Empty results mean no matching collected events, not proof of error-free operation.",
       "gridPos": {
         "x": 0,
         "y": 22,
@@ -585,7 +585,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=~\"workstation-install|workstation-kernel\"}",
+          "expr": "{job=~\"workstation-install|workstation-kernel|workstation-maintenance\"}",
           "queryType": "range",
           "maxLines": 50
         }

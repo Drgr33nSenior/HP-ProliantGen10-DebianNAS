@@ -990,6 +990,1329 @@
           "groupBy": []
         }
       ]
+    },
+    {
+      "id": 16,
+      "title": "Maintenance & hardware health",
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 17,
+      "title": "How to read the maintenance view",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Host maintenance jobs write these series through node-exporter's textfile collector. **Missing data is not healthy data**: an empty panel means the job or its timer has not reported. SMART values are read passively (no self-tests). Advisory findings without a recorded fix are tracker matches that still need an applicability review; fix status is relative to the pinned package snapshot. Retention figures are a **report only**; nothing is deleted. Details: `advisories.json`, `retention.json` and `ras-mc-ctl --summary` on the host (docs/HOST-MAINTENANCE.md). Filtered smartd, rasdaemon and job logs are in the Monitoring dashboard."
+      }
+    },
+    {
+      "id": 18,
+      "title": "SSD health problems",
+      "type": "stat",
+      "description": "Drives failing the SMART self-assessment, with a non-zero NVMe critical warning, or with media errors. 0 is healthy.",
+      "gridPos": {
+        "x": 0,
+        "y": 58,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(workstation_nvme_smart_passed{job=\"node\"} == bool 0) + sum(workstation_nvme_critical_warning{job=\"node\"} > bool 0) + sum(workstation_nvme_media_errors{job=\"node\"} > bool 0)",
+          "legendFormat": "Problems",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No SMART data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 19,
+      "title": "Hottest SSD",
+      "type": "stat",
+      "description": "Highest NVMe composite temperature from SMART. smartd logs at 70 \u00b0C and alerts at 80 \u00b0C; the drives' own warning threshold is 84 \u00b0C.",
+      "gridPos": {
+        "x": 4,
+        "y": 58,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(workstation_nvme_temperature_celsius{job=\"node\"})",
+          "legendFormat": "Hottest",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "noValue": "No SMART data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 20,
+      "title": "Hardware errors recorded",
+      "type": "stat",
+      "description": "Events in rasdaemon's persistent database (MCE, memory controller, PCIe AER, memory failure). Any non-zero value needs inspection with ras-mc-ctl --summary.",
+      "gridPos": {
+        "x": 8,
+        "y": 58,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(workstation_ras_events_recorded{job=\"node\",severity=\"all\"}) or (max(workstation_ras_database_readable{job=\"node\"}) - 1)",
+          "legendFormat": "Recorded",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No RAS data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "Database unreadable",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 21,
+      "title": "Advisory scan age",
+      "type": "stat",
+      "description": "Time since the last successful full advisory scan. Stale or never-run scans are not evidence of a clean system.",
+      "gridPos": {
+        "x": 12,
+        "y": 58,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - max(workstation_advisory_last_success_timestamp_seconds{job=\"node\"} > 0)",
+          "legendFormat": "Age",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Never scanned",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 129600
+              },
+              {
+                "color": "red",
+                "value": 259200
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 22,
+      "title": "Vulnerable packages \u00b7 fix available",
+      "type": "stat",
+      "description": "Installed packages whose tracker advisory records a fixed version (installable from the configured snapshot, or only after moving the snapshot).",
+      "gridPos": {
+        "x": 16,
+        "y": 58,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(workstation_advisory_findings{job=\"node\",class=~\"fix_.*\"})",
+          "legendFormat": "With fix",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No scan data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 23,
+      "title": "Backup freshness",
+      "type": "stat",
+      "description": "Age of the last successful off-site service backup. Backups are parked until there is real data: \"Not configured\" is the expected state, not a healthy one.",
+      "gridPos": {
+        "x": 20,
+        "y": 58,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(time() - max(workstation_service_backup_offsite_last_success_seconds{job=\"node\"} > 0)) or (max(workstation_maintenance_backup_configured{job=\"node\"}) * -1 - 1)",
+          "legendFormat": "Backup",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 93600
+              },
+              {
+                "color": "red",
+                "value": 172800
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "Not configured",
+                  "color": "orange",
+                  "index": 0
+                },
+                "-2": {
+                  "text": "Configured, never succeeded",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 24,
+      "title": "SSD temperature \u00b7 each drive (SMART)",
+      "type": "timeseries",
+      "description": "SMART composite temperature by drive serial, sampled every 10 minutes. The hwmon panel above samples faster; this one tracks the value smartd and the alerts use.",
+      "gridPos": {
+        "x": 0,
+        "y": 62,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_nvme_temperature_celsius{job=\"node\"}",
+          "legendFormat": "{{serial}} ({{device}})",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "noValue": "No SMART data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "title": "SSD health details",
+      "type": "table",
+      "description": "Lifetime SMART counters per drive. Unsafe shutdowns count power losses without a clean NVMe shutdown.",
+      "gridPos": {
+        "x": 12,
+        "y": 62,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_nvme_smart_passed{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "workstation_nvme_critical_warning{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "workstation_nvme_available_spare_percent{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "expr": "workstation_nvme_percentage_used{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "expr": "workstation_nvme_media_errors{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "F",
+          "expr": "workstation_nvme_error_log_entries{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "G",
+          "expr": "workstation_nvme_unsafe_shutdowns{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "H",
+          "expr": "workstation_nvme_power_on_hours{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true
+            },
+            "renameByName": {
+              "Value #A": "SMART passed",
+              "Value #B": "Critical warning",
+              "Value #C": "Spare %",
+              "Value #D": "Used %",
+              "Value #E": "Media errors",
+              "Value #F": "Error log entries",
+              "Value #G": "Unsafe shutdowns",
+              "Value #H": "Power-on hours"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No SMART data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 26,
+      "title": "Maintenance jobs \u00b7 last run",
+      "type": "table",
+      "description": "Result, age of the last success and resources used by the last run of each maintenance job (systemd accounting).",
+      "gridPos": {
+        "x": 0,
+        "y": 70,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_maintenance_job_last_result{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "time() - workstation_maintenance_job_last_success_timestamp_seconds{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "workstation_maintenance_job_cpu_seconds{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "expr": "workstation_maintenance_job_memory_peak_bytes{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "expr": "workstation_maintenance_job_io_read_bytes{job=\"node\"} + workstation_maintenance_job_io_write_bytes{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "renameByName": {
+              "Value #A": "Last result",
+              "Value #B": "Since success",
+              "Value #C": "CPU",
+              "Value #D": "Memory peak",
+              "Value #E": "Disk I/O",
+              "task": "Job"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No job has reported",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last result"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Failed",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "Succeeded",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Since success"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CPU"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Memory peak"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Disk I/O"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 27,
+      "title": "Advisory findings \u00b7 vulnerable installed packages",
+      "type": "table",
+      "description": "One row per installed package matched by the Arch security tracker. no_fix_recorded rows need an applicability review: the tracker may be stale. CVE lists are in advisories.json on the host.",
+      "gridPos": {
+        "x": 12,
+        "y": 70,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_advisory_finding_info{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "Value": true
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No scan data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 28,
+      "title": "Packages behind current Arch",
+      "type": "stat",
+      "description": "Installed repository packages with a newer version in today's Arch repositories (private comparison database; the configured snapshot mirror is unchanged).",
+      "gridPos": {
+        "x": 0,
+        "y": 78,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(workstation_update_pending_packages{job=\"node\"})",
+          "legendFormat": "Behind",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No comparison data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 29,
+      "title": "Package snapshot age",
+      "type": "stat",
+      "description": "Age of the configured (pinned) core/extra package databases. Fix status is relative to this snapshot.",
+      "gridPos": {
+        "x": 6,
+        "y": 78,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - max(workstation_advisory_configured_db_timestamp_seconds{job=\"node\"} > 0)",
+          "legendFormat": "Snapshot",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No scan data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2592000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 30,
+      "title": "Packages outside tracker coverage",
+      "type": "stat",
+      "description": "Foreign/custom packages (custom kernel, K3s, workstation packages) that the Arch tracker cannot assess. Container images are scanned separately by Trivy at publish time.",
+      "gridPos": {
+        "x": 12,
+        "y": 78,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(workstation_advisory_uncovered_packages{job=\"node\"})",
+          "legendFormat": "Uncovered",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No scan data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 31,
+      "title": "Monitoring daemons inactive",
+      "type": "stat",
+      "description": "smartd, rasdaemon and the maintenance timers that are not active.",
+      "gridPos": {
+        "x": 18,
+        "y": 78,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(workstation_maintenance_service_active{job=\"node\"} == 0) or (max(workstation_maintenance_service_active{job=\"node\"}) * 0)",
+          "legendFormat": "Inactive",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 32,
+      "title": "Retention report \u00b7 reclaimable space (report only)",
+      "type": "bargauge",
+      "description": "Estimated space a reviewed cleanup could recover. Deletion is disabled; candidates exclude deployed and rollback digests, current stack.lock inputs, unpublished images (review) and all compiler, source and scanner caches.",
+      "gridPos": {
+        "x": 0,
+        "y": 82,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(workstation_retention_image_bytes{job=\"node\",decision=\"candidate\"})",
+          "legendFormat": "Podman images \u00b7 candidates",
+          "range": false,
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "max(workstation_retention_build_bytes{job=\"node\",decision=\"candidate\"})",
+          "legendFormat": "Build runs \u00b7 candidates",
+          "range": false,
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "max(workstation_retention_image_bytes{job=\"node\",decision=\"review\"})",
+          "legendFormat": "Unpublished images \u00b7 owner review",
+          "range": false,
+          "instant": true
+        },
+        {
+          "refId": "D",
+          "expr": "max(workstation_retention_image_bytes{job=\"node\",decision=\"all\"})",
+          "legendFormat": "Podman store \u00b7 total",
+          "range": false,
+          "instant": true
+        },
+        {
+          "refId": "E",
+          "expr": "max(workstation_retention_build_bytes{job=\"node\",decision=\"keep\"})",
+          "legendFormat": "Build runs \u00b7 kept",
+          "range": false,
+          "instant": true
+        },
+        {
+          "refId": "F",
+          "expr": "sum(workstation_retention_preserved_bytes{job=\"node\"})",
+          "legendFormat": "Preserved caches",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "No retention report",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "valueMode": "color",
+        "namePlacement": "auto"
+      }
+    },
+    {
+      "id": 33,
+      "title": "Recorded hardware events \u00b7 rasdaemon",
+      "type": "table",
+      "description": "Rows in rasdaemon's SQLite database by event table and severity. The kernel EDAC counters are in the ECC panel above. History persists across daemon restarts and reboots.",
+      "gridPos": {
+        "x": 12,
+        "y": 82,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "workstation_ras_events_recorded{job=\"node\"}",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true
+            },
+            "renameByName": {
+              "Value": "Events"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No RAS data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
     }
   ]
 }
