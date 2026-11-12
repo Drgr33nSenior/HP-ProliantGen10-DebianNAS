@@ -180,6 +180,14 @@ groups:
         annotations:
           summary: 'An NVMe drive recorded new media errors or error-log entries'
           description: 'Read smartctl -l error on the workstation and the smartd journal; some error-log entries are benign rejected commands.'
+      - alert: WorkstationSSDUncleanShutdown
+        # The drive counts power losses without an NVMe shutdown notification; it only moves on
+        # the boot after one. 33 on each drive date from before this install (2026-11-12).
+        expr: 'delta(workstation_nvme_unsafe_shutdowns{job="node"}[1d]) > 0'
+        labels: {severity: warning}
+        annotations:
+          summary: 'An NVMe drive lost power without a clean shutdown'
+          description: 'The RAID0 root array was cut off mid-write: check the previous boot ended with systemd shutting down (journalctl -b -1), the power supply and how the host was turned off.'
       - alert: WorkstationSSDTemperatureHigh
         expr: 'workstation_nvme_temperature_celsius{job="node"} >= 70'
         for: 15m

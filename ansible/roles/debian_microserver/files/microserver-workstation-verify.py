@@ -20,7 +20,7 @@ PROFILES_SOURCE = {'pyroscope': ('grafana-pyroscope-datasource', 'http://127.0.0
 PROFILES_PROVISIONING = Path('/etc/microserver/monitoring/provisioning/datasources/pyroscope.yaml')
 # Must equal the rule count in observability/config/workstation-alerts.yaml; a
 # repository test enforces this so the verifier cannot drift from the source.
-WORKSTATION_RULE_COUNT = 40
+WORKSTATION_RULE_COUNT = 41
 VIEW = 'workstation_dashboard_metadata'
 # Grafana 13 stores provisioned dashboards in resource, not the legacy dashboard
 # table. Extract these public fields inside SQLite; never return resource.value.
