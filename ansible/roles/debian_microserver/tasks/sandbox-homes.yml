@@ -1,0 +1,285 @@
+---
+# Per-user sandbox homes: one ZFS dataset per listed user under the Kubernetes
+# dataset, each exported read-write to exactly one K3s node and snapshotted on a
+# schedule. refquota is the space a user sees and can free by deleting files;
+# quota (twice that) also counts the home's snapshots, so one user's churn cannot
+# consume the other homes' space. all_squash maps every client UID/GID to the
+# workspace's numeric owner; no account is created for it. Datasets are created
+# only when missing and are never destroyed here; removing a user from the list
+# removes only that export.
+- name: Require the sandbox home scope
+  ansible.builtin.assert:
+    that:
+      - microserver_k8s_nfs_client is string
+      - microserver_k8s_nfs_client is match(microserver_nfs_private_ipv4_pattern)
+      - microserver_k8s_nfs_client.split('.') | map('int') | max <= 255
+      - microserver_k8s_nfs_client.split('.') | map('int') | join('.') == microserver_k8s_nfs_client
+      - microserver_sandbox_uid | int >= 1000 and microserver_sandbox_uid | int < 60000
+      - microserver_sandbox_gid | int >= 1000 and microserver_sandbox_gid | int < 60000
+      - microserver_sandbox_quota is match('^[1-9][0-9]{0,4}[GT]$')
+      - microserver_sandbox_homes is sequence and microserver_sandbox_homes is not string and microserver_sandbox_homes is not mapping
+      - microserver_sandbox_homes | length <= 32
+      - >-
+        microserver_sandbox_homes | map(attribute='name') | map('string')
+        | select('match', '^[a-z]([a-z0-9-]{0,30}[a-z0-9])?\\Z') | list | length
+        == microserver_sandbox_homes | length
+      - microserver_sandbox_homes | map(attribute='name') | unique | list | length == microserver_sandbox_homes | length
+      - >-
+        microserver_sandbox_homes | map(attribute='quota') | map('string')
+        | select('match', '^([1-9][0-9]?|[1-4][0-9]{2}|500)G\\Z') | list | length
+        == microserver_sandbox_homes | length
+      - microserver_sandbox_snapshots_hourly | int >= 1 and microserver_sandbox_snapshots_hourly | int <= 72
+      - microserver_sandbox_snapshots_daily | int >= 1 and microserver_sandbox_snapshots_daily | int <= 90
+      - microserver_sandbox_snapshots_weekly | int >= 0 and microserver_sandbox_snapshots_weekly | int <= 12
+    fail_msg: >-
+      Supply one canonical private IPv4 K3s node, a non-system UID/GID, unique
+      lowercase DNS-label names with quotas from 1G to 500G, and snapshot retention counts.
+
+- name: Verify the reviewed pool
+  ansible.builtin.import_tasks: pool-verify.yml
+
+- name: Inspect the Kubernetes dataset the homes live under
+  ansible.builtin.command:
+    argv: [zfs, list, -H, -o, name, '{{ microserver_pool_name }}/k8s']
+  register: microserver_sandbox_parent
+  changed_when: false
+  failed_when: microserver_sandbox_parent.rc not in [0, 1]
+  check_mode: false
+
+- name: Require the commissioned Kubernetes dataset
+  ansible.builtin.assert:
+    that:
+      - microserver_sandbox_parent.rc == 0
+    fail_msg: Run ansible/owner-k8s-storage.yml first; the sandbox homes live under its dataset and quota.
+
+- name: Inspect the sandbox dataset
+  ansible.builtin.command:
+    argv: [zfs, list, -H, -o, name, '{{ microserver_pool_name }}/k8s/sandbox']
+  register: microserver_sandbox_dataset
+  changed_when: false
+  failed_when: microserver_sandbox_dataset.rc not in [0, 1]
+  check_mode: false
+
+- name: Inspect the sandbox mount directory without following symlinks
+  ansible.builtin.stat:
+    path: /srv/microserver/sandbox
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: microserver_sandbox_path
+
+- name: Refuse an existing sandbox directory without its dataset
+  ansible.builtin.assert:
+    that:
+      - microserver_sandbox_dataset.rc == 0 or not microserver_sandbox_path.stat.exists
+      - not microserver_sandbox_path.stat.islnk | default(false)
+    fail_msg: /srv/microserver/sandbox exists without its dataset or is a symlink; review it before continuing.
+
+# canmount=off: the parent holds the shared properties and the total quota but
+# no files, and stays outside the nas-nfs export so the CSI provisioner and the
+# claims it serves cannot reach the homes.
+- name: Create only the missing sandbox dataset
+  ansible.builtin.command:
+    argv: [zfs, create, -o, canmount=off, -o, mountpoint=/srv/microserver/sandbox, -o, compression=lz4,
+           -o, atime=off, -o, xattr=sa, -o, setuid=off, -o, devices=off,
+           -o, 'quota={{ microserver_sandbox_quota }}', '{{ microserver_pool_name }}/k8s/sandbox']
+  when: microserver_sandbox_dataset.rc == 1
+
+- name: Read the sandbox dataset state and quota
+  ansible.builtin.command:
+    argv: [zfs, get, -H, -o, value, 'type,canmount,mountpoint,quota', '{{ microserver_pool_name }}/k8s/sandbox']
+  register: microserver_sandbox_properties
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode or microserver_sandbox_dataset.rc == 0
+
+- name: Require the unmounted sandbox parent at its reviewed path
+  ansible.builtin.assert:
+    that:
+      - microserver_sandbox_properties.stdout_lines[:3] == ['filesystem', 'off', '/srv/microserver/sandbox']
+    fail_msg: The sandbox dataset differs from the reviewed layout; no homes were changed.
+  when: not ansible_check_mode or microserver_sandbox_dataset.rc == 0
+
+- name: Apply the reviewed total sandbox quota
+  ansible.builtin.command:
+    argv: [zfs, set, 'quota={{ microserver_sandbox_quota }}', '{{ microserver_pool_name }}/k8s/sandbox']
+  when:
+    - not ansible_check_mode or microserver_sandbox_dataset.rc == 0
+    - microserver_sandbox_properties.stdout_lines[3] != microserver_sandbox_quota
+
+- name: Inspect each sandbox home dataset
+  ansible.builtin.command:
+    argv: [zfs, list, -H, -o, name, '{{ microserver_pool_name }}/k8s/sandbox/{{ item.name }}']
+  loop: '{{ microserver_sandbox_homes }}'
+  loop_control:
+    label: '{{ item.name }}'
+  register: microserver_sandbox_home_datasets
+  changed_when: false
+  failed_when: microserver_sandbox_home_datasets.rc not in [0, 1]
+  check_mode: false
+
+- name: Inspect each sandbox home path without following symlinks
+  ansible.builtin.stat:
+    path: '/srv/microserver/sandbox/{{ item.name }}'
+    follow: false
+    get_checksum: false
+    get_mime: false
+  loop: '{{ microserver_sandbox_homes }}'
+  loop_control:
+    label: '{{ item.name }}'
+  register: microserver_sandbox_home_paths
+
+- name: Refuse to mount a new home over an existing path
+  ansible.builtin.assert:
+    that:
+      - item.0.rc == 0 or not item.1.stat.exists
+      - not item.1.stat.islnk | default(false)
+    fail_msg: '/srv/microserver/sandbox/{{ item.0.item.name }} exists without its dataset or is a symlink; review it before continuing.'
+  loop: '{{ microserver_sandbox_home_datasets.results | zip(microserver_sandbox_home_paths.results) | list }}'
+  loop_control:
+    label: '{{ item.0.item.name }}'
+
+- name: Create only the missing sandbox home datasets
+  ansible.builtin.command:
+    argv: [zfs, create, -o, 'refquota={{ item.item.quota }}',
+           -o, 'quota={{ item.item.quota[:-1] | int * 2 }}G',
+           '{{ microserver_pool_name }}/k8s/sandbox/{{ item.item.name }}']
+  loop: '{{ microserver_sandbox_home_datasets.results }}'
+  loop_control:
+    label: '{{ item.item.name }}'
+  when: item.rc == 1
+
+- name: Read each sandbox home state and quotas
+  ansible.builtin.command:
+    argv: [zfs, get, -H, -o, value, 'type,mountpoint,mounted,refquota,quota',
+           '{{ microserver_pool_name }}/k8s/sandbox/{{ item.item.name }}']
+  loop: '{{ microserver_sandbox_home_datasets.results }}'
+  loop_control:
+    label: '{{ item.item.name }}'
+  register: microserver_sandbox_home_properties
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode or item.rc == 0
+
+- name: Require every mounted sandbox home dataset
+  ansible.builtin.assert:
+    that:
+      - item.stdout_lines[:3] == ['filesystem', '/srv/microserver/sandbox/' ~ item.item.item.name, 'yes']
+    fail_msg: A sandbox home export must be its mounted ZFS dataset; never fall back to the OS SSD.
+  loop: '{{ microserver_sandbox_home_properties.results }}'
+  loop_control:
+    label: '{{ item.item.item.name }}'
+  when: item is not skipped
+
+- name: Apply the reviewed home quotas
+  ansible.builtin.command:
+    argv: [zfs, set, 'refquota={{ item.item.item.quota }}',
+           'quota={{ item.item.item.quota[:-1] | int * 2 }}G',
+           '{{ microserver_pool_name }}/k8s/sandbox/{{ item.item.item.name }}']
+  loop: '{{ microserver_sandbox_home_properties.results }}'
+  loop_control:
+    label: '{{ item.item.item.name }}'
+  when:
+    - item is not skipped
+    - item.stdout_lines[3:5] != [item.item.item.quota, (item.item.item.quota[:-1] | int * 2) ~ 'G']
+
+# Setgid and group access match what the kubelet sets for the pods' fsGroup, so
+# its ownership pass has nothing to change on mount.
+- name: Set ownership on each home root only
+  ansible.builtin.file:
+    path: '/srv/microserver/sandbox/{{ item.item.item.name }}'
+    state: directory
+    owner: '{{ microserver_sandbox_uid }}'
+    group: '{{ microserver_sandbox_gid }}'
+    mode: '2770'
+    follow: false
+  loop: '{{ microserver_sandbox_home_properties.results }}'
+  loop_control:
+    label: '{{ item.item.item.name }}'
+  when: item is not skipped
+
+- name: Create the NFS exports directory
+  ansible.builtin.file:
+    path: /etc/exports.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Export each sandbox home to the K3s node only
+  ansible.builtin.template:
+    src: sandbox-exports.j2
+    dest: /etc/exports.d/microserver-sandbox.exports
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload MicroServer NFS exports
+
+- name: Keep the configured NFS server running
+  ansible.builtin.systemd_service:
+    name: nfs-kernel-server
+    enabled: true
+    state: started
+
+- name: Apply the exports before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the active exports
+  ansible.builtin.command:
+    argv: [exportfs, -v]
+  register: microserver_sandbox_exports
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require every active sandbox home export
+  ansible.builtin.assert:
+    that:
+      - >-
+        microserver_sandbox_exports.stdout is search('/srv/microserver/sandbox/' ~ item.name ~ '\\s+'
+        ~ (microserver_k8s_nfs_client | regex_escape) ~ '\\([^)]*anonuid=' ~ microserver_sandbox_uid
+        ~ ',anongid=' ~ microserver_sandbox_gid ~ '[^)]*all_squash')
+    fail_msg: The active NFS exports differ from the reviewed sandbox home exports.
+  loop: '{{ microserver_sandbox_homes }}'
+  loop_control:
+    label: '{{ item.name }}'
+  when: not ansible_check_mode
+
+# The configuration is in place before the package, so the first timer run
+# already uses it.
+- name: Create the sanoid configuration directory
+  ansible.builtin.file:
+    path: /etc/sanoid
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Schedule sandbox home snapshots with retention
+  ansible.builtin.template:
+    src: sanoid.conf.j2
+    dest: /etc/sanoid/sanoid.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install sanoid from the configured signed Debian repositories
+  ansible.builtin.apt:
+    name: sanoid
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Inspect the packaged snapshot timer
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/sanoid.timer
+    get_checksum: false
+    get_mime: false
+  register: microserver_sandbox_sanoid_timer
+
+- name: Enable the packaged snapshot timer
+  ansible.builtin.systemd_service:
+    name: sanoid.timer
+    enabled: true
+    state: started
+  when: not ansible_check_mode or microserver_sandbox_sanoid_timer.stat.exists

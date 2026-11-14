@@ -1,0 +1,17 @@
+# Managed by ansible/owner-sandbox-homes.yml; this role owns the whole file.
+# Snapshots every sandbox home, including homes added later, and prunes only
+# its own autosnap_* snapshots.
+[{{ microserver_pool_name }}/k8s/sandbox]
+use_template = sandbox_home
+recursive = yes
+process_children_only = yes
+
+[template_sandbox_home]
+frequently = 0
+hourly = {{ microserver_sandbox_snapshots_hourly }}
+daily = {{ microserver_sandbox_snapshots_daily }}
+weekly = {{ microserver_sandbox_snapshots_weekly }}
+monthly = 0
+yearly = 0
+autosnap = yes
+autoprune = yes

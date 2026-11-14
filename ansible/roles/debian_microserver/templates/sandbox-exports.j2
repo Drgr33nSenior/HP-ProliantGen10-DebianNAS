@@ -1,0 +1,5 @@
+# Managed: one export per sandbox home, for one K3s node. all_squash maps every
+# client UID/GID to the workspace's numeric owner; sync keeps writes durable.
+{% for home in microserver_sandbox_homes %}
+/srv/microserver/sandbox/{{ home.name }} {{ microserver_k8s_nfs_client }}(rw,sync,all_squash,anonuid={{ microserver_sandbox_uid }},anongid={{ microserver_sandbox_gid }},no_subtree_check,mountpoint,sec=sys)
+{% endfor %}

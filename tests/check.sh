@@ -30,6 +30,7 @@ ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ans
 ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ansible/owner-cockpit.yml
 ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ansible/owner-houston.yml
 ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ansible/owner-ui-runtime-repair.yml
+ansible-playbook -i ansible/microserver.inventory.example.ini --syntax-check ansible/owner-sandbox-homes.yml
 bash tests/test_microserver.sh
 "$MICROSERVER_PYTHON" observability/unpoller/render.py --check
 "$MICROSERVER_PYTHON" tests/home-lab/check_unpoller_dashboards.py

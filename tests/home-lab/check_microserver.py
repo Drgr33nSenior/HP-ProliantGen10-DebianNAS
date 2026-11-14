@@ -431,7 +431,8 @@ class MicroServerTests(unittest.TestCase):
                     self.assertIn(argv[1], ['get', 'list'])
                 if argv[:2] == ['zfs', 'create']:
                     self.assertIn(task['when'], ['microserver_dataset.rc == 1', 'microserver_k8s_dataset.rc == 1',
-                                                 'microserver_registry_dataset.rc == 1'])
+                                                 'microserver_registry_dataset.rc == 1',
+                                                 'microserver_sandbox_dataset.rc == 1', 'item.rc == 1'])
                     self.assertNotIn('-f', argv)
                 if task.get('check_mode') is False:
                     storage_read = argv[:2] in [['zpool', 'get'], ['zpool', 'list'], ['zfs', 'list'], ['zfs', 'get']]

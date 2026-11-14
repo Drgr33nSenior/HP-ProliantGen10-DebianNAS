@@ -44,3 +44,7 @@ microserver_unifi_controller_ip: ''   # Optional private IPv4 alias for that hos
 microserver_unifi_auth_method: api_key  # Or password for a local read-only account.
 microserver_unifi_username: ''  # Required only with password authentication.
 microserver_unifi_custom_ca: false  # Use the owner-verified unifi-ca.pem if needed.
+# Per-user sandbox homes (docs/KUBERNETES-STORAGE.md); needs the Kubernetes NFS
+# component. Keep the real names in the private configuration.
+microserver_sandbox_homes_enabled: false
+microserver_sandbox_homes: []  # For example: [{name: example-parent, quota: 20G}]

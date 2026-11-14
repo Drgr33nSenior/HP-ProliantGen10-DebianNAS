@@ -134,3 +134,7 @@ ansible/roles/debian_microserver/templates/k8s-exports.j2
 ansible/roles/debian_microserver/templates/registry-compose.yaml.j2
 ansible/roles/debian_microserver/templates/registry-config.json.j2
 docs/REGISTRY.md
+ansible/owner-sandbox-homes.yml
+ansible/roles/debian_microserver/tasks/sandbox-homes.yml
+ansible/roles/debian_microserver/templates/sandbox-exports.j2
+ansible/roles/debian_microserver/templates/sanoid.conf.j2
