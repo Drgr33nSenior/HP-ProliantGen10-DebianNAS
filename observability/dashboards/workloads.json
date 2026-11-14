@@ -2592,7 +2592,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(te_queue_size{job=\"embedding\"})",
+          "expr": "max(te_queue_size{job=\"embedding\"}) or on() (max(up{job=\"embedding\"}) == 1) * 0",
           "range": false,
           "instant": true
         }
@@ -2646,7 +2646,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
-          "noValue": "Unavailable",
+          "noValue": "No embedding requests in this window",
           "color": {
             "mode": "thresholds"
           }
@@ -2730,14 +2730,14 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (method) (rate(te_request_count{job=\"embedding\"}[$__rate_interval]))",
+          "expr": "sum by (method) (rate(te_request_count{job=\"embedding\"}[$__rate_interval])) or on() label_replace((max(up{job=\"embedding\"}) == 1) * 0, \"method\", \"none\", \"\", \"\")",
           "legendFormat": "requests \u00b7 {{method}}",
           "range": true,
           "instant": false
         },
         {
           "refId": "B",
-          "expr": "sum(rate(te_embed_count{job=\"embedding\"}[$__rate_interval]))",
+          "expr": "sum(rate(te_embed_count{job=\"embedding\"}[$__rate_interval])) or on() (max(up{job=\"embedding\"}) == 1) * 0",
           "legendFormat": "texts embedded",
           "range": true,
           "instant": false
@@ -2816,7 +2816,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "noValue": "Unavailable",
+          "noValue": "No embedding requests in this window",
           "color": {
             "mode": "palette-classic"
           },
