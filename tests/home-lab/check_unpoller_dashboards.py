@@ -77,6 +77,14 @@ class UnPollerDashboardTests(unittest.TestCase):
         ap = next(item for item in self.dashboards if item['uid'] == 'g5wFWqxZk')
         self.assertEqual(next(panel for panel in renderer.panels(ap['panels']) if panel['id'] == 8)['fieldConfig']['defaults']['unit'], 'percentunit')
         self.assertEqual(next(panel for panel in renderer.panels(ap['panels']) if panel['id'] == 32)['title'], 'Collection age')
+        # The UDM gateway exports no LAN counters, so those panels are removed and WAN takes the row.
+        gateway = next(item for item in self.dashboards if item['uid'] == '4Yo8IZ-Wk')
+        gateway_panels = list(renderer.panels(gateway['panels']))
+        self.assertFalse({35, 25, 51} & {panel['id'] for panel in gateway_panels})
+        self.assertFalse(any('unifipoller_device_lan_' in text for text in renderer.strings(gateway)))
+        for panel in gateway_panels:
+            if panel['id'] in {3, 36, 48}:
+                self.assertEqual(panel['gridPos']['w'], 24)
 
     def test_prometheus_keeps_dashboard_families_and_excludes_unneeded_metrics(self):
         metrics = json.loads(self.outputs[ROOT / 'observability/unpoller/metrics.json'])

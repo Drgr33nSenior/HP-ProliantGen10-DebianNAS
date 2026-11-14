@@ -354,9 +354,9 @@
     },
     {
       "id": 6,
-      "title": "GPU allocation slots · node",
+      "title": "GPUs · AMD exporter",
       "type": "stat",
-      "description": "Kubernetes allocatable amd.com/gpu slots across the node, not free VRAM or proof of device ownership.",
+      "description": "Cards the AMD metrics exporter reports. Pods receive them through DRA ResourceClaims, which several Pods may share, so this is not free VRAM or proof of device ownership.",
       "gridPos": {
         "x": 16,
         "y": 4,
@@ -370,8 +370,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(kube_node_status_allocatable{job=\"kube-state-metrics\",resource=\"amd_com_gpu\"})",
-          "legendFormat": "Allocatable",
+          "expr": "count(max by (gpu_id) (gpu_total_vram{job=\"amd-gpu\"}))",
+          "legendFormat": "GPUs",
           "range": false,
           "instant": true
         }
@@ -766,9 +766,9 @@
     },
     {
       "id": 14,
-      "title": "GPU requests · active Pods",
+      "title": "GPU claims · active Pods",
       "type": "table",
-      "description": "Regular-container amd.com/gpu requests in active selected Pods; absent rows mean no matching requests. This does not authorize GPU use or account for init-container resource semantics.",
+      "description": "DRA ResourceClaims referenced by active selected Pods, one row per Pod and claim. A shared claim appears under every Pod that uses it. This is the declared reference, not measured GPU activity.",
       "gridPos": {
         "x": 0,
         "y": 29,
@@ -782,8 +782,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "kube_pod_container_resource_requests{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",resource=\"amd_com_gpu\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",phase=~\"Pending|Running|Unknown\"} == 1)",
-          "legendFormat": "{{namespace}} / {{pod}}",
+          "expr": "kube_pod_resourceclaim_info{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",phase=~\"Pending|Running|Unknown\"} == 1)",
+          "legendFormat": "{{namespace}} / {{pod}} / {{resourceclaim_name}}",
           "range": false,
           "instant": true,
           "format": "table"

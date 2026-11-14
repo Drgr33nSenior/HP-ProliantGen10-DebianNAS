@@ -903,9 +903,9 @@
     },
     {
       "id": 15,
-      "title": "GPU requests · selected Pods",
+      "title": "GPU claims · selected Pods",
       "type": "table",
-      "description": "Regular-container GPU requests; absent rows mean no matching declared requests, not device ownership or measured GPU activity.",
+      "description": "DRA ResourceClaims the selected Pods reference; absent rows mean no claim, not measured GPU activity. A shared claim appears under every Pod that uses it.",
       "gridPos": {
         "x": 12,
         "y": 36,
@@ -919,8 +919,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "kube_pod_container_resource_requests{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",resource=\"amd_com_gpu\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1)",
-          "legendFormat": "{{namespace}} / {{pod}} / {{container}}",
+          "expr": "kube_pod_resourceclaim_info{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\"} and on(namespace,pod) (kube_pod_status_phase{job=\"kube-state-metrics\",namespace=~\"${namespace:regex}\",pod=~\"${pod:regex}\",phase=~\"${phase:regex}\"} == 1)",
+          "legendFormat": "{{namespace}} / {{pod}} / {{resourceclaim_name}}",
           "range": false,
           "instant": true,
           "format": "table"

@@ -45,6 +45,17 @@ def adapt(source, name):
     # DPI is deliberately disabled in this installation.
     if name == 'sites':
         dashboard['panels'] = [panel for panel in dashboard['panels'] if panel['id'] != 45]
+    # UnPoller reports LAN counters only for USG gateways; this site's UDM gateway has none, so the
+    # three LAN panels could never show data. Their WAN neighbours take the full row.
+    if name == 'gateway':
+        lan = {35: 'LAN Throughput', 25: 'LAN Packets', 51: 'LAN Drops'}
+        found = {panel['id']: panel['title'] for panel in dashboard['panels'] if panel['id'] in lan}
+        if found != lan:
+            raise ValueError('Unexpected upstream gateway LAN panels')
+        dashboard['panels'] = [panel for panel in dashboard['panels'] if panel['id'] not in lan]
+        for panel in dashboard['panels']:
+            if panel['id'] in {3, 36, 48}:
+                panel['gridPos'] = dict(panel['gridPos'], w=24)
     for variable in dashboard.get('templating', {}).get('list', []):
         if variable.get('includeAll'):
             variable['allValue'] = '.*'
