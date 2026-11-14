@@ -1,0 +1,33 @@
+---
+# Owner-run component update: per-user sandbox home datasets, their NFS exports
+# and their snapshot schedule. Does not change disks, the pool, the nas-nfs
+# export, other datasets or the UIs, and never destroys a dataset or snapshot
+# outside sanoid's own retention.
+- name: Owner-run MicroServer sandbox home storage
+  hosts: microserver
+  become: true
+  gather_facts: true
+  serial: 1
+  # Run the queued export reload even if a later task fails, so a rerun never
+  # finds a changed exports file with an unapplied export table.
+  force_handlers: true
+  pre_tasks:
+    - name: Require one commissioned NAS and the explicit sandbox home component
+      ansible.builtin.assert:
+        that:
+          - microserver_owner_install | default(false) | bool
+          - microserver_k8s_storage_enabled | default(false) | bool
+          - microserver_sandbox_homes_enabled | default(false) | bool
+          - ansible_facts.hostname == 'ig0r'
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: >-
+          Run this component only for the commissioned Debian 13 AMD64 NAS with
+          microserver_k8s_storage_enabled and microserver_sandbox_homes_enabled.
+  tasks:
+    - name: Configure only the sandbox home datasets, exports and snapshots
+      ansible.builtin.import_role:
+        name: debian_microserver
+        tasks_from: sandbox-homes

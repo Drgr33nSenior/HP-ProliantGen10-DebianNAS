@@ -41,6 +41,104 @@ Run it with the commissioning inventory and configuration, the latest owner
 profile and `microserver_k8s_storage_enabled: true`,
 `microserver_k8s_nfs_client: '<node IPv4>'`. The play verifies the active export.
 
+## Per-user sandbox homes
+
+`ansible/owner-sandbox-homes.yml` gives each listed person a dataset of their
+own for the assistant's coding workspace. It needs the Kubernetes NFS export
+above and reuses its client address.
+
+| Item | Value |
+| --- | --- |
+| Dataset | `nas/k8s/sandbox/<name>`, mounted at `/srv/microserver/sandbox/<name>` |
+| Parent | `nas/k8s/sandbox`: `canmount=off`, lz4, `atime=off`, `xattr=sa`, `setuid=off`, `devices=off`, total quota `microserver_sandbox_quota` (200G) |
+| Space | `refquota` = the listed quota (live files); `quota` = twice that (live files plus snapshots) |
+| Export | `rw,sync,all_squash,anonuid=1000,anongid=1000,no_subtree_check,mountpoint,sec=sys` to `microserver_k8s_nfs_client` only |
+| Owner | Home root `1000:1000`, mode `2770`; no NAS account is created for it |
+| Snapshots | sanoid: 24 hourly, 14 daily, 4 weekly, pruned automatically |
+
+Design notes:
+
+- **Datasets, not directories.** The `nas-nfs` class separates claims by
+  directory only, with no per-claim limit or snapshot. A dataset per person adds
+  an enforced size limit and independent snapshots and rollback.
+- **`refquota` is the visible limit.** A plain `quota` also counts snapshots, so
+  a full home could stay full after its files are deleted, until the snapshots
+  expire. With `refquota`, deleting files frees space at once. The doubled
+  `quota` caps one home's snapshot growth so it cannot use the other homes'
+  space; the parent quota caps all homes together, inside the 1 TiB of `nas/k8s`.
+- **Mounted outside the `nas-nfs` export.** The homes are children of `nas/k8s`
+  for accounting, but mount under `/srv/microserver/sandbox`. The CSI
+  provisioner and the claims it serves therefore cannot reach them.
+- **UID mapping.** Workspace pods run as UID/GID 1000. `all_squash` with
+  `anonuid=1000,anongid=1000` makes every file belong to 1000:1000 whichever
+  client identity wrote it, so nothing runs as root to fix ownership and tools
+  that check file ownership, such as Git, accept the home. On the NAS, UID 1000
+  is also the administrator's login. `setuid=off` and `devices=off` stop a file
+  written by a workspace from gaining that identity or device access if it were
+  ever run on the NAS; do not execute files from these datasets on the NAS.
+- **Mode `2770`** is what the kubelet sets for a pod `fsGroup` of 1000, so its
+  ownership pass finds nothing to change when the pod uses
+  `fsGroupChangePolicy: OnRootMismatch`.
+- **sanoid** is the Debian-packaged (2.2.0, GPL-3) snapshot scheduler. It is
+  preferred to a local timer script because retention pruning destroys
+  snapshots, and sanoid's pruning is widely used and limited to its own
+  `autosnap_*` names. Its dependencies are Perl modules plus `pv`, `lzop` and
+  `mbuffer`. The role owns `/etc/sanoid/sanoid.conf` and enables the packaged
+  `sanoid.timer` (every 15 minutes). Homes added later are covered without a
+  configuration change. Snapshots stay on the same pool: they recover deleted
+  or overwritten files, not a lost pool.
+
+The play takes the homes as two variables. The workstation repository's
+`lib/workstation/sandbox_homes.py nas-vars` prints them as a JSON extra-vars
+file from the workstation's private user mapping, so the names and quotas have
+one source. Keep that file outside Git:
+
+```json
+{
+  "microserver_sandbox_homes_enabled": true,
+  "microserver_sandbox_homes": [
+    {"name": "example-parent", "quota": "20G"},
+    {"name": "example-child", "quota": "20G"}
+  ]
+}
+```
+
+Names are lowercase DNS labels of at most 32 characters; quotas are whole
+gibibytes from `1G` to `500G`. Check first, then apply the same inputs:
+
+```sh
+ANSIBLE_HOST_KEY_CHECKING=True ansible-playbook \
+  -i /path/to/private/inventory.ini --limit nas \
+  -e @/path/to/private/microserver.yml -e @/path/to/private/sandbox-homes.json \
+  --ask-become-pass --check --diff ansible/owner-sandbox-homes.yml
+```
+
+Check mode reads pool and dataset metadata and reports the datasets it would
+create; it creates nothing. The apply creates only missing datasets, refuses to
+mount over an existing path, adjusts changed quotas, reloads the export table
+with `exportfs -ra` (the NFS server is not restarted, so mounted volumes do not
+stall) and verifies each active export. Lowering a quota below the space in
+use fails without changing data.
+
+Verify afterwards on the NAS:
+
+```sh
+zfs list -o name,used,refquota,quota,mountpoint -r nas/k8s/sandbox
+sudo exportfs -v | grep -A1 /srv/microserver/sandbox
+systemctl list-timers sanoid.timer
+zfs list -t snapshot -r nas/k8s/sandbox      # after the first timer run
+```
+
+Removing a person from the list removes only their export. The dataset and its
+snapshots stay, and sanoid keeps pruning them to the retention counts. Destroy a
+retired home by hand after review: `zfs destroy -r nas/k8s/sandbox/<name>`, then
+remove the empty `/srv/microserver/sandbox/<name>` directory.
+
+To restore, copy files out of
+`/srv/microserver/sandbox/<name>/.zfs/snapshot/<snapshot>/` on the NAS, or stop
+the person's workspace and run `zfs rollback` to a named snapshot. Rollback
+discards everything written after that snapshot.
+
 The NAS is currently a single server. Its redundant disks do not protect against
 NAS power, network or motherboard failure. Local volumes also bind a workload to
 its workstation and need independent backups. Replicated CSI storage becomes

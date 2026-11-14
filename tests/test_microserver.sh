@@ -19,6 +19,7 @@ trap 'rm -rf -- "$work"' EXIT
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_houston.py"
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_zfs_write.py"
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_registry.py"
+"$MICROSERVER_PYTHON" "$root/tests/home-lab/check_sandbox_homes.py"
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_identity.py"
 "$MICROSERVER_PYTHON" "$root/tests/home-lab/check_receivers_native.py"
 if [[ $(uname -s) == Linux ]] && command -v systemd-analyze >/dev/null 2>&1; then

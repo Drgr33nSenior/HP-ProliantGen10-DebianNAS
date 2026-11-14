@@ -4,6 +4,13 @@
     name: nfs-kernel-server
     state: restarted
 
+# Applies added or removed exports without the restart's NFSv4 grace period,
+# which would stall the other mounted volumes.
+- name: Reload MicroServer NFS exports
+  ansible.builtin.command:
+    argv: [exportfs, -ra]
+  changed_when: true
+
 - name: Restart MicroServer node exporter
   ansible.builtin.systemd_service:
     name: prometheus-node-exporter
