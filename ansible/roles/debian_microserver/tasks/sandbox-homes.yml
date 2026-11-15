@@ -4,7 +4,7 @@
 # schedule. refquota is the space a user sees and can free by deleting files;
 # quota (twice that) also counts the home's snapshots, so one user's churn cannot
 # consume the other homes' space. all_squash maps every client UID/GID to the
-# workspace's numeric owner; no account is created for it. Datasets are created
+# dedicated non-login `sandbox` account the workspace pods run as. Datasets are created
 # only when missing and are never destroyed here; removing a user from the list
 # removes only that export.
 - name: Require the sandbox home scope
@@ -32,8 +32,66 @@
       - microserver_sandbox_snapshots_daily | int >= 1 and microserver_sandbox_snapshots_daily | int <= 90
       - microserver_sandbox_snapshots_weekly | int >= 0 and microserver_sandbox_snapshots_weekly | int <= 12
     fail_msg: >-
-      Supply one canonical private IPv4 K3s node, a non-system UID/GID, unique
+      Supply one canonical private IPv4 K3s node, a dedicated UID/GID, unique
       lowercase DNS-label names with quotas from 1G to 500G, and snapshot retention counts.
+
+# Every home file belongs to the sandbox account, so it must be a system account
+# of its own and never a login: UID/GID 1000 is the administrator's login, 2000
+# and 2001 are k8s-nfs and zot-registry. A UID, GID or `sandbox` name held any
+# other way, or a member in its group (who could then write every home), stops
+# the play here, before anything changes; an existing account is never renumbered.
+- name: Look up the sandbox account name, UID and GID
+  ansible.builtin.command:
+    argv: [getent, '{{ item.database }}', '{{ item.key }}']
+  loop:
+    - {database: passwd, key: sandbox}
+    - {database: passwd, key: '{{ microserver_sandbox_uid }}'}
+    - {database: group, key: sandbox}
+    - {database: group, key: '{{ microserver_sandbox_gid }}'}
+  loop_control:
+    label: '{{ item.database }} {{ item.key }}'
+  register: microserver_sandbox_account
+  changed_when: false
+  failed_when: microserver_sandbox_account.rc not in [0, 2]
+  check_mode: false
+
+- name: Refuse a sandbox UID, GID or name held by another account
+  ansible.builtin.assert:
+    that:
+      - >-
+        item.rc == 2 or (item.stdout.split(':')[0] == 'sandbox'
+        and item.stdout.split(':')[2] | int
+        == (microserver_sandbox_uid if item.item.database == 'passwd' else microserver_sandbox_gid) | int
+        and item.stdout.split(':')[3]
+        == (microserver_sandbox_gid | string if item.item.database == 'passwd' else ''))
+    fail_msg: >-
+      {{ item.item.database }} {{ item.item.key }} is held as "{{ item.stdout }}". The sandbox homes
+      need UID {{ microserver_sandbox_uid }} and GID {{ microserver_sandbox_gid }} for a dedicated
+      `sandbox` account and group with no members. Choose free numbers on the NAS and in the
+      workstation's sandbox.SANDBOX_UID, or resolve the conflict by hand; nothing was changed.
+  loop: '{{ microserver_sandbox_account.results }}'
+  loop_control:
+    label: '{{ item.item.database }} {{ item.item.key }}'
+
+- name: Create the sandbox home group
+  ansible.builtin.group:
+    name: sandbox
+    gid: '{{ microserver_sandbox_gid }}'
+    system: true
+
+# No supplementary groups, no home, no password and no shell.
+- name: Create the non-login sandbox home owner
+  ansible.builtin.user:
+    name: sandbox
+    uid: '{{ microserver_sandbox_uid }}'
+    group: sandbox
+    groups: ''
+    append: false
+    system: true
+    create_home: false
+    home: /nonexistent
+    shell: /usr/sbin/nologin
+    password: '!'
 
 - name: Verify the reviewed pool
   ansible.builtin.import_tasks: pool-verify.yml

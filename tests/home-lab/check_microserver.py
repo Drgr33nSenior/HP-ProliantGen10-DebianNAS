@@ -460,8 +460,12 @@ class MicroServerTests(unittest.TestCase):
                                     '/etc/microserver/private/registry-htpasswd']
                         or argv == ['/usr/bin/docker-compose', '--project-name', 'microserver-registry', '--file',
                                     '/etc/microserver/registry/compose.yaml', 'config', '--quiet'])
+                    # The sandbox homes look up only their own account and group.
+                    account_read = (source.name == 'sandbox-homes.yml'
+                                    and argv == ['getent', '{{ item.database }}', '{{ item.key }}']
+                                    and {item['database'] for item in task['loop']} == {'passwd', 'group'})
                     self.assertTrue(storage_read or hardware_read or dns_read or ui_status_read or ui_scope_read
-                                    or telemetry_read or registry_read, argv)
+                                    or telemetry_read or registry_read or account_read, argv)
 
     def test_path_guards(self):
         task = next(task for task in self.storage if task['name'].startswith('Refuse untrusted'))

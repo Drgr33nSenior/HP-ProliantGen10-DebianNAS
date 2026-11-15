@@ -17,6 +17,9 @@ from check_microserver import ENV, ROLE, ROOT, assertions, read_yaml
 from check_registry import task
 
 HOMES = [{'name': 'alice', 'quota': '20G'}, {'name': 'bob-2', 'quota': '50G'}]
+# Account tasks change NAS users; the localhost dataset fixture never runs them.
+ACCOUNT_TASKS = {'Look up the sandbox account name, UID and GID', 'Refuse a sandbox UID, GID or name held by another account',
+                 'Create the sandbox home group', 'Create the non-login sandbox home owner'}
 # Stands in for zfs and zpool: state lives in one JSON file and every changing
 # call is logged, so the play's real task flow runs without a pool.
 STUB = '''#!{python}
@@ -66,7 +69,7 @@ class SandboxHomeTests(unittest.TestCase):
 
     def test_each_home_is_one_single_client_all_squash_export(self):
         lines = [line for line in self.render('sandbox-exports.j2').splitlines() if line and not line.startswith('#')]
-        options = '192.168.30.11(rw,sync,all_squash,anonuid=1000,anongid=1000,no_subtree_check,mountpoint,sec=sys)'
+        options = '192.168.30.11(rw,sync,all_squash,anonuid=2002,anongid=2002,no_subtree_check,mountpoint,sec=sys)'
         self.assertEqual(lines, ['/srv/microserver/sandbox/alice ' + options,
                                  '/srv/microserver/sandbox/bob-2 ' + options])
         self.assertEqual([line for line in self.render('sandbox-exports.j2', microserver_sandbox_homes=[]).splitlines()
@@ -103,6 +106,49 @@ class SandboxHomeTests(unittest.TestCase):
                              ('microserver_sandbox_homes', homes(quota='none'))]:
             with self.subTest(field=field, value=value):
                 self.assertFalse(assertions(scope, dict(self.context, **{field: value})))
+
+    def test_homes_belong_to_a_dedicated_non_login_system_account(self):
+        defaults = read_yaml(ROLE / 'defaults/main.yml')
+        # Never 1000, the administrator's login; 2000 and 2001 are k8s-nfs and zot-registry.
+        self.assertEqual((defaults['microserver_sandbox_uid'], defaults['microserver_sandbox_gid']), (2002, 2002))
+        group = task(self.tasks, 'Create the sandbox home group')['ansible.builtin.group']
+        self.assertEqual(group, {'name': 'sandbox', 'gid': '{{ microserver_sandbox_gid }}', 'system': True})
+        user = task(self.tasks, 'Create the non-login sandbox home owner')['ansible.builtin.user']
+        self.assertEqual(user, {'name': 'sandbox', 'uid': '{{ microserver_sandbox_uid }}', 'group': 'sandbox',
+                                'groups': '', 'append': False, 'system': True, 'create_home': False,
+                                'home': '/nonexistent', 'shell': '/usr/sbin/nologin', 'password': '!'})
+        lookup = task(self.tasks, 'Look up the sandbox account name, UID and GID')
+        self.assertEqual(lookup['ansible.builtin.command']['argv'], ['getent', '{{ item.database }}', '{{ item.key }}'])
+        self.assertIs(lookup['check_mode'], False)
+        # The account is settled before any dataset, owner or export changes.
+        names = [item['name'] for item in self.tasks]
+        account = max(names.index(name) for name in ACCOUNT_TASKS)
+        self.assertEqual(names.index('Look up the sandbox account name, UID and GID'), 1)
+        for later in ('Create only the missing sandbox dataset', 'Set ownership on each home root only',
+                      'Export each sandbox home to the K3s node only'):
+            self.assertLess(account, names.index(later))
+
+    def test_account_conflicts_stop_the_play(self):
+        refuse = task(self.tasks, 'Refuse a sandbox UID, GID or name held by another account')
+
+        def result(database, stdout, rc=0):
+            return dict(self.context, microserver_sandbox_uid=2002, microserver_sandbox_gid=2002,
+                        item={'rc': rc, 'stdout': stdout, 'item': {'database': database, 'key': 'fixture'}})
+        for database, stdout, rc, accepted in [
+                ('passwd', '', 2, True),
+                ('group', '', 2, True),
+                ('passwd', 'sandbox:x:2002:2002::/nonexistent:/usr/sbin/nologin', 0, True),
+                ('group', 'sandbox:x:2002:', 0, True),
+                # UID 1000 is the administrator's login; any other holder is refused alike.
+                ('passwd', 'admin:x:2002:2002::/home/admin:/bin/bash', 0, False),
+                ('passwd', 'sandbox:x:2003:2002::/nonexistent:/usr/sbin/nologin', 0, False),
+                ('passwd', 'sandbox:x:2002:100::/nonexistent:/usr/sbin/nologin', 0, False),
+                ('group', 'users:x:2002:', 0, False),
+                ('group', 'sandbox:x:2003:', 0, False),
+                # A member of the group could write every home.
+                ('group', 'sandbox:x:2002:admin', 0, False)]:
+            with self.subTest(database=database, stdout=stdout):
+                self.assertEqual(assertions(refuse, result(database, stdout, rc)), accepted)
 
     def test_datasets_are_created_only_when_missing_and_nothing_is_destroyed(self):
         parent = task(self.tasks, 'Create only the missing sandbox dataset')
@@ -148,12 +194,13 @@ class SandboxHomeTests(unittest.TestCase):
         self.addCleanup(ENV.filters.pop, 'regex_escape')
         live = ('/srv/microserver/k8s\n\t\t192.168.30.11(sync,wdelay,hide,no_subtree_check,mountpoint,anonuid=2000,'
                 'anongid=2000,sec=sys,rw,secure,root_squash,all_squash)\n/srv/microserver/sandbox/alice\n\t\t'
-                '192.168.30.11(sync,wdelay,hide,no_subtree_check,mountpoint,anonuid=1000,anongid=1000,sec=sys,rw,'
+                '192.168.30.11(sync,wdelay,hide,no_subtree_check,mountpoint,anonuid=2002,anongid=2002,sec=sys,rw,'
                 'secure,root_squash,all_squash)\n')
         context = dict(self.context, item=HOMES[0], microserver_sandbox_exports={'stdout': live})
         self.assertTrue(assertions(verify, context))
         self.assertFalse(assertions(verify, dict(context, item=HOMES[1])))
-        for wrong in [live.replace('anonuid=1000,anongid=1000', 'anonuid=2000,anongid=2000'),
+        for wrong in [live.replace('anonuid=2002,anongid=2002', 'anonuid=1000,anongid=1000'),
+                      live.replace('anonuid=2002,anongid=2002', 'anonuid=2000,anongid=2000'),
                       live.replace('sandbox/alice\n\t\t192.168.30.11', 'sandbox/alice\n\t\t192.168.30.12'),
                       live.replace('sandbox/alice', 'sandbox/alice2')]:
             self.assertFalse(assertions(verify, dict(context, microserver_sandbox_exports={'stdout': wrong})))
@@ -200,7 +247,7 @@ class SandboxHomeTests(unittest.TestCase):
             (tools / name).chmod(0o755)
         end = next(index for index, item in enumerate(self.tasks)
                    if item['name'] == 'Set ownership on each home root only')
-        tasks = copy.deepcopy(self.tasks[:end])
+        tasks = copy.deepcopy([item for item in self.tasks[:end] if item['name'] not in ACCOUNT_TASKS])
         for item in tasks:
             if 'ansible.builtin.import_tasks' in item:
                 item['ansible.builtin.import_tasks'] = str(ROLE / 'tasks' / item['ansible.builtin.import_tasks'])
