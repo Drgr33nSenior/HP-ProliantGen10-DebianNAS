@@ -44,9 +44,12 @@ microserver_k8s_quota: 1T
 # Kubernetes NFS component and reuses its client address.
 microserver_sandbox_homes_enabled: false
 microserver_sandbox_homes: []
-# Numeric owner of every home; matches the UID/GID the workspace pods run as.
-microserver_sandbox_uid: 1000
-microserver_sandbox_gid: 1000
+# Numeric owner of every home: the non-login `sandbox` system account the play
+# creates, and the UID/GID the workspace pods run as (workstation
+# sandbox.SANDBOX_UID). Never 1000, the administrator's login; 2000 and 2001 are
+# k8s-nfs and zot-registry.
+microserver_sandbox_uid: 2002
+microserver_sandbox_gid: 2002
 # Ceiling for all homes together, snapshots included.
 microserver_sandbox_quota: 200G
 microserver_sandbox_snapshots_hourly: 24

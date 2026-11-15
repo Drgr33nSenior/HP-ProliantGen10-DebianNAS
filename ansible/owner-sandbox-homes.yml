@@ -1,6 +1,7 @@
 ---
-# Owner-run component update: per-user sandbox home datasets, their NFS exports
-# and their snapshot schedule. Does not change disks, the pool, the nas-nfs
+# Owner-run component update: the non-login `sandbox` account that owns the
+# homes, per-user sandbox home datasets, their NFS exports and their snapshot
+# schedule. Does not change disks, the pool, the nas-nfs
 # export, other datasets or the UIs, and never destroys a dataset or snapshot
 # outside sanoid's own retention.
 - name: Owner-run MicroServer sandbox home storage
@@ -27,7 +28,7 @@
           Run this component only for the commissioned Debian 13 AMD64 NAS with
           microserver_k8s_storage_enabled and microserver_sandbox_homes_enabled.
   tasks:
-    - name: Configure only the sandbox home datasets, exports and snapshots
+    - name: Configure only the sandbox account, home datasets, exports and snapshots
       ansible.builtin.import_role:
         name: debian_microserver
         tasks_from: sandbox-homes

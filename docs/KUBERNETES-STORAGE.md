@@ -52,8 +52,9 @@ above and reuses its client address.
 | Dataset | `nas/k8s/sandbox/<name>`, mounted at `/srv/microserver/sandbox/<name>` |
 | Parent | `nas/k8s/sandbox`: `canmount=off`, lz4, `atime=off`, `xattr=sa`, `setuid=off`, `devices=off`, total quota `microserver_sandbox_quota` (200G) |
 | Space | `refquota` = the listed quota (live files); `quota` = twice that (live files plus snapshots) |
-| Export | `rw,sync,all_squash,anonuid=1000,anongid=1000,no_subtree_check,mountpoint,sec=sys` to `microserver_k8s_nfs_client` only |
-| Owner | Home root `1000:1000`, mode `2770`; no NAS account is created for it |
+| Account | System user and group `sandbox`, UID/GID `microserver_sandbox_uid`/`_gid` (2002); no login shell, home, password or other groups |
+| Export | `rw,sync,all_squash,anonuid=2002,anongid=2002,no_subtree_check,mountpoint,sec=sys` to `microserver_k8s_nfs_client` only |
+| Owner | Home root `2002:2002` (`sandbox`), mode `2770` |
 | Snapshots | sanoid: 24 hourly, 14 daily, 4 weekly, pruned automatically |
 
 Design notes:
@@ -69,14 +70,23 @@ Design notes:
 - **Mounted outside the `nas-nfs` export.** The homes are children of `nas/k8s`
   for accounting, but mount under `/srv/microserver/sandbox`. The CSI
   provisioner and the claims it serves therefore cannot reach them.
-- **UID mapping.** Workspace pods run as UID/GID 1000. `all_squash` with
-  `anonuid=1000,anongid=1000` makes every file belong to 1000:1000 whichever
+- **UID mapping.** Workspace pods run as UID/GID 2002. `all_squash` with
+  `anonuid=2002,anongid=2002` makes every file belong to 2002:2002 whichever
   client identity wrote it, so nothing runs as root to fix ownership and tools
-  that check file ownership, such as Git, accept the home. On the NAS, UID 1000
-  is also the administrator's login. `setuid=off` and `devices=off` stop a file
-  written by a workspace from gaining that identity or device access if it were
-  ever run on the NAS; do not execute files from these datasets on the NAS.
-- **Mode `2770`** is what the kubelet sets for a pod `fsGroup` of 1000, so its
+  that check file ownership, such as Git, accept the home.
+- **A dedicated account, not a login.** On the NAS, UID 1000 is the
+  administrator's login, so homes squashed to 1000 would be that account's
+  files; 1001 is left for the next person, and 2000 and 2001 are `k8s-nfs` and
+  `zot-registry`. The play creates the `sandbox` system account and group with
+  no login shell, home, password or supplementary groups. Before changing
+  anything it stops if the UID, the GID or the name `sandbox` is already held in
+  any other way, or if the group has members (they could write every home); it
+  never renumbers an existing account. The workstation's
+  `lib/workstation/sandbox_homes.py nas-vars` passes the same UID/GID the pods
+  run as. `setuid=off` and `devices=off` stop a file written by a workspace
+  from gaining an identity or device access if it were ever run on the NAS; do
+  not execute files from these datasets on the NAS.
+- **Mode `2770`** is what the kubelet sets for a pod `fsGroup` of 2002, so its
   ownership pass finds nothing to change when the pod uses
   `fsGroupChangePolicy: OnRootMismatch`.
 - **sanoid** is the Debian-packaged (2.2.0, GPL-3) snapshot scheduler. It is
@@ -88,14 +98,16 @@ Design notes:
   configuration change. Snapshots stay on the same pool: they recover deleted
   or overwritten files, not a lost pool.
 
-The play takes the homes as two variables. The workstation repository's
-`lib/workstation/sandbox_homes.py nas-vars` prints them as a JSON extra-vars
-file from the workstation's private user mapping, so the names and quotas have
-one source. Keep that file outside Git:
+The play takes the homes and their owner as variables. The workstation
+repository's `lib/workstation/sandbox_homes.py nas-vars` prints them as a JSON
+extra-vars file from the workstation's private user mapping, so the names,
+quotas and owner have one source. Keep that file outside Git:
 
 ```json
 {
   "microserver_sandbox_homes_enabled": true,
+  "microserver_sandbox_uid": 2002,
+  "microserver_sandbox_gid": 2002,
   "microserver_sandbox_homes": [
     {"name": "example-parent", "quota": "20G"},
     {"name": "example-child", "quota": "20G"}
@@ -113,8 +125,9 @@ ANSIBLE_HOST_KEY_CHECKING=True ansible-playbook \
   --ask-become-pass --check --diff ansible/owner-sandbox-homes.yml
 ```
 
-Check mode reads pool and dataset metadata and reports the datasets it would
-create; it creates nothing. The apply creates only missing datasets, refuses to
+Check mode reads the account database, pool and dataset metadata and reports
+the account and datasets it would create; it creates nothing. The apply creates
+the `sandbox` account if missing, only missing datasets, refuses to
 mount over an existing path, adjusts changed quotas, reloads the export table
 with `exportfs -ra` (the NFS server is not restarted, so mounted volumes do not
 stall) and verifies each active export. Lowering a quota below the space in
@@ -123,6 +136,7 @@ use fails without changing data.
 Verify afterwards on the NAS:
 
 ```sh
+getent passwd sandbox; getent group sandbox   # 2002, /usr/sbin/nologin, no members
 zfs list -o name,used,refquota,quota,mountpoint -r nas/k8s/sandbox
 sudo exportfs -v | grep -A1 /srv/microserver/sandbox
 systemctl list-timers sanoid.timer
